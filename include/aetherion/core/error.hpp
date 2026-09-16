@@ -29,4 +29,8 @@ template <typename T> class Result {
     std::variant<T, Error> storage_;
 };
 
+using Status = Result<std::monostate>;
+
+[[nodiscard]] inline Status success() { return std::monostate{}; }
+
 } // namespace aetherion::core

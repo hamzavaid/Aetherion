@@ -22,7 +22,14 @@ endif()
 
 add_library(aetherion_core
   src/core/log.cpp
+  src/core/scene.cpp
+  src/core/simulation.cpp
+  src/core/simulation_clock.cpp
+  src/core/telemetry.cpp
   src/math/vec3d.cpp
+  src/physics/gravity/gravity_solver.cpp
+  src/physics/integrators/semi_implicit_euler.cpp
+  src/presets/mechanics_presets.cpp
 )
 add_library(Aetherion::core ALIAS aetherion_core)
 target_include_directories(aetherion_core PUBLIC include)
@@ -31,6 +38,10 @@ aetherion_set_project_warnings(aetherion_core)
 add_executable(aetherion_app src/app/main.cpp)
 target_link_libraries(aetherion_app PRIVATE Aetherion::core)
 aetherion_set_project_warnings(aetherion_app)
+
+add_executable(aetherion_headless src/app/headless_main.cpp)
+target_link_libraries(aetherion_headless PRIVATE Aetherion::core)
+aetherion_set_project_warnings(aetherion_headless)
 
 if(AETHERION_BUILD_TESTS)
   enable_testing()
