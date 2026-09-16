@@ -4,6 +4,7 @@
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/simulation_controller.hpp"
+#include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/render_data.hpp"
 
@@ -32,12 +33,15 @@ class EngineeringUi final {
     void drawSimulationControls(core::SimulationController& controller,
                                 renderer::RenderSettings& render_settings);
     void drawDiagnostics(const core::SimulationController& controller);
+    void drawPlots(const core::SimulationController& controller);
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
     bool initialized_{};
     bool dock_layout_initialized_{};
     std::size_t new_body_counter_{1};
+    int plot_metric_{};
+    std::optional<physics::IntegratorComparisonReport> comparison_;
 };
 
 } // namespace aetherion::ui

@@ -8,6 +8,7 @@ using aetherion::core::CommandQueue;
 using aetherion::core::CreateBodyCommand;
 using aetherion::core::RuntimeSettings;
 using aetherion::core::Scene;
+using aetherion::core::SetIntegratorCommand;
 using aetherion::core::SetPhysicsDtCommand;
 using aetherion::core::UpdateBodyCommand;
 
@@ -21,13 +22,15 @@ TEST(CommandQueue, AppliesTypedEditsInFifoOrderAndRecordsEvents) {
     queue.enqueue(
         UpdateBodyCommand{.id = id.value(), .patch = BodyPatch{.velocity_mps = {{2, 0, 0}}}});
     queue.enqueue(SetPhysicsDtCommand{.physics_dt_s = 0.25});
+    queue.enqueue(SetIntegratorCommand{aetherion::physics::IntegratorKind::velocity_verlet});
     const auto report = queue.apply(scene, settings, 1.5);
-    EXPECT_EQ(report.accepted, 3U);
+    EXPECT_EQ(report.accepted, 4U);
     EXPECT_EQ(report.rejected, 0U);
     EXPECT_DOUBLE_EQ(scene.find(id.value())->mass_kg, 4.0);
     EXPECT_EQ(scene.find(id.value())->state.velocity_mps, (aetherion::math::Vec3d{2, 0, 0}));
     EXPECT_DOUBLE_EQ(settings.physics_dt_s, 0.25);
-    ASSERT_EQ(queue.eventLog().size(), 3U);
+    EXPECT_EQ(settings.integrator, aetherion::physics::IntegratorKind::velocity_verlet);
+    ASSERT_EQ(queue.eventLog().size(), 4U);
     EXPECT_LT(queue.eventLog()[0].sequence, queue.eventLog()[1].sequence);
 }
 

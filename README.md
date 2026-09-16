@@ -25,3 +25,8 @@ The dockable engineering workspace provides a scene hierarchy, validated propert
 transport controls, global gravity/time settings, and live diagnostics. Scene and solver edits are
 queued and applied at deterministic simulation boundaries; rejected numeric input appears in the
 diagnostic command log.
+
+Semi-Implicit Euler, Velocity Verlet, and classical RK4 are selectable at runtime. The diagnostics
+and plots report mechanical energy and momentum errors relative to the initial sample, while the
+timestep analyzer warns when orbital or pair-crossing timescales are under-resolved. Run
+`aetherion_compare` for the reproducible one-period Earth-like integrator comparison.

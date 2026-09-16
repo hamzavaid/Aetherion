@@ -26,3 +26,17 @@ TEST(Telemetry, ReportsMechanicalInvariantsInSiUnits) {
     EXPECT_EQ(sample.center_of_mass_m, (aetherion::math::Vec3d{}));
     EXPECT_EQ(recorder.samples().size(), 1U);
 }
+
+TEST(Telemetry, ReportsEnergyAndMomentumErrorsAgainstFirstSample) {
+    Scene scene;
+    ASSERT_TRUE(scene.createBody(Body{.name = "body",
+                                      .mass_kg = 2.0,
+                                      .radius_m = 1.0,
+                                      .state = {.velocity_mps = {3.0, 0.0, 0.0}}}));
+    TelemetryRecorder recorder(4);
+    static_cast<void>(recorder.sample(scene, 0.0));
+    scene.bodies()[0].state.velocity_mps = {4.0, 0.0, 0.0};
+    const auto changed = recorder.sample(scene, 1.0);
+    EXPECT_NEAR(changed.relative_energy_error, 7.0 / 9.0, 1.0e-14);
+    EXPECT_DOUBLE_EQ(changed.momentum_error_kg_mps, 2.0);
+}

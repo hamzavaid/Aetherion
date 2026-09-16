@@ -8,8 +8,13 @@
 #include <GLFW/glfw3.h>
 
 #include <array>
+#include <cfloat>
 #include <cstdio>
 #include <string>
+#include <vector>
+
+#include "aetherion/physics/stability_analyzer.hpp"
+#include "aetherion/presets/mechanics_presets.hpp"
 
 namespace aetherion::ui {
 
@@ -85,6 +90,7 @@ void EngineeringUi::drawDockSpace() {
         ImGui::DockBuilderDockWindow("Inspector", right);
         ImGui::DockBuilderDockWindow("Simulation Controls", bottom);
         ImGui::DockBuilderDockWindow("Diagnostics", bottom);
+        ImGui::DockBuilderDockWindow("Plots", bottom);
         ImGui::DockBuilderFinish(dock_id);
     }
     ImGui::End();
@@ -206,6 +212,12 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     if (ImGui::Checkbox("Global gravity", &gravity)) {
         controller.commands().enqueue(core::SetGravityEnabledCommand{gravity});
     }
+    constexpr const char* integrator_names[] = {"Semi-Implicit Euler", "Velocity Verlet", "RK4"};
+    int integrator = static_cast<int>(controller.settings().integrator);
+    if (ImGui::Combo("Integrator", &integrator, integrator_names, 3)) {
+        controller.commands().enqueue(
+            core::SetIntegratorCommand{static_cast<physics::IntegratorKind>(integrator)});
+    }
     ImGui::SeparatorText("Visualization (does not affect physics)");
     ImGui::InputDouble("Meters / render unit", &render_settings.meters_to_render_units, 0.0, 0.0,
                        "%.9g");
@@ -224,6 +236,17 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
         ImGui::Text("Total energy: %.9g J", sample.total_energy_J);
         ImGui::Text("Momentum: [%.6g, %.6g, %.6g] kg m/s", sample.linear_momentum_kg_mps.x,
                     sample.linear_momentum_kg_mps.y, sample.linear_momentum_kg_mps.z);
+        ImGui::Text("Relative energy error: %.6g", sample.relative_energy_error);
+        ImGui::Text("Momentum error: %.6g kg m/s", sample.momentum_error_kg_mps);
+    }
+    const auto warnings =
+        physics::analyzeTimestep(controller.scene(), controller.settings().physics_dt_s);
+    for (const auto& warning : warnings) {
+        const ImVec4 color = warning.severity == physics::StabilitySeverity::unstable
+                                 ? ImVec4{1.0F, 0.25F, 0.2F, 1.0F}
+                                 : ImVec4{1.0F, 0.72F, 0.2F, 1.0F};
+        ImGui::TextColored(color, "dt/timescale %.3g: %s", warning.timestep_to_timescale_ratio,
+                           warning.message.c_str());
     }
     const auto& events = controller.commands().eventLog();
     if (!events.empty()) {
@@ -234,6 +257,45 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
                            event.detail.c_str());
         if (!event.accepted)
             ImGui::PopStyleColor();
+    }
+    if (ImGui::Button("Run Earth-orbit integrator comparison")) {
+        constexpr std::size_t steps = 365;
+        const double dt_s = presets::earth_like_orbit_period_s / static_cast<double>(steps);
+        comparison_ =
+            physics::IntegratorComparison::run(presets::makeEarthLikeOrbit(), dt_s, steps);
+    }
+    if (comparison_) {
+        ImGui::SeparatorText("Comparison: one circular period");
+        for (const auto& run : comparison_->runs) {
+            ImGui::Text("%s: max dE/E %.3g, orbit error %.3g",
+                        physics::integratorName(run.integrator).data(),
+                        run.maximum_relative_energy_error, run.relative_orbit_reference_error);
+        }
+    }
+    ImGui::End();
+}
+
+void EngineeringUi::drawPlots(const core::SimulationController& controller) {
+    ImGui::Begin("Plots");
+    constexpr const char* metrics[] = {"Relative energy error", "Momentum error (kg m/s)",
+                                       "Total energy (J)"};
+    ImGui::Combo("Metric", &plot_metric_, metrics, 3);
+    const auto& samples = controller.telemetry().samples();
+    std::vector<float> values;
+    values.reserve(samples.size());
+    for (const auto& sample : samples) {
+        double value = sample.relative_energy_error;
+        if (plot_metric_ == 1)
+            value = sample.momentum_error_kg_mps;
+        if (plot_metric_ == 2)
+            value = sample.total_energy_J;
+        values.push_back(static_cast<float>(value));
+    }
+    if (!values.empty()) {
+        ImGui::PlotLines(metrics[plot_metric_], values.data(), static_cast<int>(values.size()), 0,
+                         nullptr, FLT_MAX, FLT_MAX, {-1.0F, 120.0F});
+    } else {
+        ImGui::TextUnformatted("Run or single-step the simulation to collect telemetry.");
     }
     ImGui::End();
 }
@@ -251,6 +313,7 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     drawInspector(controller, camera);
     drawSimulationControls(controller, render_settings);
     drawDiagnostics(controller);
+    drawPlots(controller);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     return core::success();

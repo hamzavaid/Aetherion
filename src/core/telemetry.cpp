@@ -1,6 +1,7 @@
 #include "aetherion/core/telemetry.hpp"
 
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 #include "aetherion/physics/constants.hpp"
@@ -48,11 +49,36 @@ TelemetrySample TelemetryRecorder::sample(const Scene& scene, double time_s) {
         }
     }
     output.total_energy_J = output.kinetic_energy_J + output.gravitational_potential_energy_J;
+    if (!has_baseline_) {
+        has_baseline_ = true;
+        baseline_energy_J_ = output.total_energy_J;
+        baseline_momentum_kg_mps_ = output.linear_momentum_kg_mps;
+        baseline_angular_momentum_kg_m2_ps_ = output.angular_momentum_kg_m2_ps;
+    }
+    const double energy_scale =
+        std::max(std::abs(baseline_energy_J_), std::numeric_limits<double>::min());
+    output.relative_energy_error =
+        std::abs(output.total_energy_J - baseline_energy_J_) / energy_scale;
+    output.momentum_error_kg_mps =
+        (output.linear_momentum_kg_mps - baseline_momentum_kg_mps_).norm();
+    const double angular_scale =
+        std::max(baseline_angular_momentum_kg_m2_ps_.norm(), std::numeric_limits<double>::min());
+    output.relative_angular_momentum_error =
+        (output.angular_momentum_kg_m2_ps - baseline_angular_momentum_kg_m2_ps_).norm() /
+        angular_scale;
     if (samples_.size() == capacity_) {
         samples_.erase(samples_.begin());
     }
     samples_.push_back(output);
     return output;
+}
+
+void TelemetryRecorder::clear() noexcept {
+    samples_.clear();
+    has_baseline_ = false;
+    baseline_energy_J_ = 0.0;
+    baseline_momentum_kg_mps_ = {};
+    baseline_angular_momentum_kg_m2_ps_ = {};
 }
 
 } // namespace aetherion::core

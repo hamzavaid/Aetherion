@@ -4,6 +4,8 @@ add_executable(aetherion_tests
   unit/scene_tests.cpp
   unit/simulation_clock_tests.cpp
   unit/gravity_tests.cpp
+  unit/integrator_tests.cpp
+  regression/integrator_comparison_tests.cpp
   unit/camera_tests.cpp
   unit/command_queue_tests.cpp
   integration/controller_workflow_tests.cpp
@@ -13,6 +15,7 @@ add_executable(aetherion_tests
   unit/semi_implicit_euler_tests.cpp
   regression/earth_orbit_tests.cpp
   unit/telemetry_tests.cpp
+  unit/stability_tests.cpp
   unit/vec3d_tests.cpp
 )
 target_link_libraries(aetherion_tests PRIVATE Aetherion::core Aetherion::renderer GTest::gtest_main)

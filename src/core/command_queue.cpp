@@ -47,7 +47,9 @@ std::string description(const SimulationCommand& command) {
                 return "set physics timestep";
             if constexpr (std::is_same_v<T, SetTimeScaleCommand>)
                 return "set time scale";
-            return "set gravity enabled";
+            if constexpr (std::is_same_v<T, SetGravityEnabledCommand>)
+                return "set gravity enabled";
+            return "set integrator";
         },
         command);
 }
@@ -83,8 +85,11 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
                 }
                 settings.time_scale = typed.time_scale;
                 return success();
-            } else {
+            } else if constexpr (std::is_same_v<T, SetGravityEnabledCommand>) {
                 settings.gravity_enabled = typed.enabled;
+                return success();
+            } else {
+                settings.integrator = typed.integrator;
                 return success();
             }
         },

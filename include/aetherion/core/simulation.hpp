@@ -4,11 +4,15 @@
 #include "aetherion/core/scene.hpp"
 #include "aetherion/core/telemetry.hpp"
 #include "aetherion/physics/gravity/gravity_solver.hpp"
+#include "aetherion/physics/integrators/integrator.hpp"
+#include "aetherion/physics/integrators/rk4.hpp"
+#include "aetherion/physics/integrators/velocity_verlet.hpp"
 
 namespace aetherion::core {
 
 struct SimulationConfig {
     double physics_dt_s{1.0 / 120.0};
+    physics::IntegratorKind integrator{physics::IntegratorKind::semi_implicit_euler};
 };
 
 /// Headless mechanics composition: gravity, integration, simulation time, and telemetry.
@@ -18,6 +22,9 @@ class Simulation final {
     [[nodiscard]] Status step();
     void setPhysicsDt(double physics_dt_s);
     void setGravityEnabled(bool enabled) noexcept { gravity_enabled_ = enabled; }
+    void setIntegrator(physics::IntegratorKind integrator) noexcept {
+        config_.integrator = integrator;
+    }
     void reset() noexcept;
     [[nodiscard]] double timeSeconds() const noexcept { return time_s_; }
     [[nodiscard]] TelemetryRecorder& telemetry() noexcept { return telemetry_; }
@@ -27,6 +34,8 @@ class Simulation final {
     Scene& scene_;
     SimulationConfig config_;
     physics::GravitySolver gravity_;
+    physics::VelocityVerletIntegrator velocity_verlet_;
+    physics::Rk4Integrator rk4_;
     TelemetryRecorder telemetry_;
     double time_s_{};
     bool gravity_enabled_{true};

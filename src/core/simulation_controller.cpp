@@ -14,6 +14,7 @@ SimulationController::SimulationController(Scene initial_scene, SimulationContro
 void SimulationController::synchronizePhysicsSettings() {
     simulation_.setPhysicsDt(settings_.physics_dt_s);
     simulation_.setGravityEnabled(settings_.gravity_enabled);
+    simulation_.setIntegrator(settings_.integrator);
 }
 
 void SimulationController::synchronizeClockSettings() {

@@ -30,7 +30,11 @@ add_library(aetherion_core
   src/core/telemetry.cpp
   src/math/vec3d.cpp
   src/physics/gravity/gravity_solver.cpp
+  src/physics/integrator_comparison.cpp
+  src/physics/integrators/rk4.cpp
   src/physics/integrators/semi_implicit_euler.cpp
+  src/physics/integrators/velocity_verlet.cpp
+  src/physics/stability_analyzer.cpp
   src/presets/mechanics_presets.cpp
 )
 add_library(Aetherion::core ALIAS aetherion_core)
@@ -119,6 +123,10 @@ aetherion_set_project_warnings(aetherion_app)
 add_executable(aetherion_headless src/app/headless_main.cpp)
 target_link_libraries(aetherion_headless PRIVATE Aetherion::core)
 aetherion_set_project_warnings(aetherion_headless)
+
+add_executable(aetherion_compare src/app/comparison_main.cpp)
+target_link_libraries(aetherion_compare PRIVATE Aetherion::core)
+aetherion_set_project_warnings(aetherion_compare)
 
 if(AETHERION_BUILD_TESTS)
   enable_testing()
