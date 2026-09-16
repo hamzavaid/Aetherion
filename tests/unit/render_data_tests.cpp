@@ -42,3 +42,15 @@ TEST(RenderData, MarksSelectedHierarchyEntityForHighlighting) {
     EXPECT_FALSE(instances[0].highlighted);
     EXPECT_TRUE(instances[1].highlighted);
 }
+
+TEST(RenderData, BodyRadiusScaleChangesOnlyVisualInstanceRadius) {
+    Scene scene;
+    ASSERT_TRUE(scene.createBody(Body{.name = "body", .mass_kg = 1.0, .radius_m = 2.0}));
+    const auto instances = buildBodyInstances(scene, {},
+                                              RenderSettings{.meters_to_render_units = 0.5,
+                                                             .minimum_apparent_radius = 0.01F,
+                                                             .body_radius_scale = 4.0F});
+    ASSERT_EQ(instances.size(), 1U);
+    EXPECT_FLOAT_EQ(instances[0].radius, 4.0F);
+    EXPECT_DOUBLE_EQ(scene.bodies()[0].radius_m, 2.0);
+}

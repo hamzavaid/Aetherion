@@ -5,10 +5,12 @@
 #include "aetherion/presets/mechanics_presets.hpp"
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/opengl_backend.hpp"
+#include "aetherion/renderer/picking.hpp"
 #include "aetherion/ui/engineering_ui.hpp"
 
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <utility>
 #endif
 
@@ -57,8 +59,18 @@ int main() {
         const auto draw_status = ui.draw(controller, camera, render_settings);
         if (!draw_status)
             return 1;
+        renderer.setInputCapture(ui.inputCapture());
         renderer.present();
         renderer.pollEvents();
+        if (const auto click = renderer.takeViewportClick()) {
+            const auto ray = camera.rayFromNdc(click->x_ndc, click->y_ndc, click->aspect_ratio);
+            const auto hit = aetherion::renderer::pickBody(
+                controller.scene(), ray,
+                {.radius_scale = render_settings.body_radius_scale,
+                 .minimum_radius_m = static_cast<double>(render_settings.minimum_apparent_radius) /
+                                     render_settings.meters_to_render_units});
+            ui.selectEntity(hit ? std::optional{hit->id} : std::nullopt);
+        }
     }
     return 0;
 #else

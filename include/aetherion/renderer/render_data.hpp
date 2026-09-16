@@ -11,6 +11,8 @@ namespace aetherion::renderer {
 struct RenderSettings {
     double meters_to_render_units{1.0};
     float minimum_apparent_radius{0.01F};
+    float body_radius_scale{1.0F};
+    bool show_grid{true};
     std::optional<core::EntityId> selected_entity;
     bool trails_enabled{};
     double trail_duration_s{2'592'000.0};

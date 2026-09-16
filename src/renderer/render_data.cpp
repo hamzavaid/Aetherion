@@ -29,15 +29,16 @@ std::vector<BodyInstance> buildBodyInstances(const core::Scene& scene,
                                              const RenderSettings& settings) {
     if (!std::isfinite(settings.meters_to_render_units) || settings.meters_to_render_units <= 0.0 ||
         !std::isfinite(settings.minimum_apparent_radius) ||
-        settings.minimum_apparent_radius <= 0.0F) {
+        settings.minimum_apparent_radius <= 0.0F || !std::isfinite(settings.body_radius_scale) ||
+        settings.body_radius_scale <= 0.0F) {
         throw std::invalid_argument(
-            "render settings require positive finite scale and apparent radius");
+            "render settings require positive finite coordinate, radius, and apparent scales");
     }
     std::vector<BodyInstance> instances;
     instances.reserve(scene.size());
     for (const auto& body : scene.bodies()) {
-        const float physical_radius =
-            static_cast<float>(body.radius_m * settings.meters_to_render_units);
+        const float physical_radius = static_cast<float>(
+            body.radius_m * settings.meters_to_render_units * settings.body_radius_scale);
         const float radius = std::max(physical_radius, settings.minimum_apparent_radius);
         const float mass_tint = static_cast<float>(
             std::clamp(std::log10(std::max(body.mass_kg, 1.0)) / 32.0, 0.0, 1.0));

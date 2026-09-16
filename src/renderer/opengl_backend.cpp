@@ -220,19 +220,22 @@ class OpenGlRenderer::Impl final {
         } else {
             trail_history_.clear();
         }
-        updateGridResources(camera, settings);
+        if (settings.show_grid)
+            updateGridResources(camera, settings);
 
         glViewport(0, 0, width, height);
         glClearColor(0.018F, 0.026F, 0.045F, 1.0F);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        glUseProgram(grid_program_);
-        glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
-                           matrix.data());
-        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), grid_origin_.x,
-                    grid_origin_.y, grid_origin_.z);
-        glBindVertexArray(grid_vao_);
-        glDrawArrays(GL_LINES, 0, grid_vertex_count_);
+        if (settings.show_grid) {
+            glUseProgram(grid_program_);
+            glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
+                               matrix.data());
+            glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), grid_origin_.x,
+                        grid_origin_.y, grid_origin_.z);
+            glBindVertexArray(grid_vao_);
+            glDrawArrays(GL_LINES, 0, grid_vertex_count_);
+        }
 
         drawTrails(scene, camera, settings, matrix);
 
@@ -263,6 +266,19 @@ class OpenGlRenderer::Impl final {
     }
 
     void pollEvents() { glfwPollEvents(); }
+    void setInputCapture(const InputCapture& capture) noexcept {
+        input_capture_ = capture;
+        if (!routesMouseToScene(input_capture_)) {
+            orbiting_ = false;
+            panning_ = false;
+            left_pressed_in_scene_ = false;
+        }
+    }
+    std::optional<ViewportClick> takeViewportClick() noexcept {
+        auto click = pending_viewport_click_;
+        pending_viewport_click_.reset();
+        return click;
+    }
     bool shouldClose() const noexcept {
         return window_ == nullptr || glfwWindowShouldClose(window_) != 0;
     }
@@ -293,6 +309,16 @@ class OpenGlRenderer::Impl final {
         const double delta_y = y - self->last_cursor_y_;
         self->last_cursor_x_ = x;
         self->last_cursor_y_ = y;
+        if (!routesMouseToScene(self->input_capture_)) {
+            return;
+        }
+        if (self->left_pressed_in_scene_) {
+            const double press_delta_x = x - self->left_press_x_;
+            const double press_delta_y = y - self->left_press_y_;
+            self->left_drag_distance_squared_ =
+                std::max(self->left_drag_distance_squared_,
+                         press_delta_x * press_delta_x + press_delta_y * press_delta_y);
+        }
         if (self->orbiting_) {
             self->active_camera_->orbit(-delta_x * 0.005, -delta_y * 0.005);
         }
@@ -308,16 +334,53 @@ class OpenGlRenderer::Impl final {
             return;
         }
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
-            self->orbiting_ = action == GLFW_PRESS;
+            if (action == GLFW_PRESS) {
+                if (!routesMouseToScene(self->input_capture_))
+                    return;
+                glfwGetCursorPos(window, &self->left_press_x_, &self->left_press_y_);
+                self->last_cursor_x_ = self->left_press_x_;
+                self->last_cursor_y_ = self->left_press_y_;
+                self->has_cursor_ = true;
+                self->left_drag_distance_squared_ = 0.0;
+                self->left_pressed_in_scene_ = true;
+                self->orbiting_ = true;
+            } else if (action == GLFW_RELEASE) {
+                self->orbiting_ = false;
+                if (self->left_pressed_in_scene_ && routesMouseToScene(self->input_capture_) &&
+                    self->left_drag_distance_squared_ <= 16.0) {
+                    int window_width = 0;
+                    int window_height = 0;
+                    int framebuffer_width = 0;
+                    int framebuffer_height = 0;
+                    glfwGetWindowSize(window, &window_width, &window_height);
+                    glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
+                    if (window_width > 0 && window_height > 0 && framebuffer_width > 0 &&
+                        framebuffer_height > 0) {
+                        double cursor_x = 0.0;
+                        double cursor_y = 0.0;
+                        glfwGetCursorPos(window, &cursor_x, &cursor_y);
+                        self->pending_viewport_click_ = {
+                            .x_ndc = 2.0 * cursor_x / static_cast<double>(window_width) - 1.0,
+                            .y_ndc = 1.0 - 2.0 * cursor_y / static_cast<double>(window_height),
+                            .aspect_ratio = static_cast<double>(framebuffer_width) /
+                                            static_cast<double>(framebuffer_height)};
+                    }
+                }
+                self->left_pressed_in_scene_ = false;
+            }
         }
         if (button == GLFW_MOUSE_BUTTON_MIDDLE || button == GLFW_MOUSE_BUTTON_RIGHT) {
-            self->panning_ = action == GLFW_PRESS;
+            if (action == GLFW_PRESS && routesMouseToScene(self->input_capture_))
+                self->panning_ = true;
+            if (action == GLFW_RELEASE)
+                self->panning_ = false;
         }
     }
 
     static void scrollCallback(GLFWwindow* window, double /*x_offset*/, double y_offset) {
         auto* self = fromWindow(window);
-        if (self != nullptr && self->active_camera_ != nullptr) {
+        if (self != nullptr && self->active_camera_ != nullptr &&
+            routesMouseToScene(self->input_capture_)) {
             self->active_camera_->zoom(-y_offset);
         }
     }
@@ -325,7 +388,8 @@ class OpenGlRenderer::Impl final {
     static void keyCallback(GLFWwindow* window, int key, int /*scan_code*/, int action,
                             int /*modifiers*/) {
         auto* self = fromWindow(window);
-        if (self != nullptr && self->active_camera_ != nullptr && action == GLFW_PRESS &&
+        if (self != nullptr && self->active_camera_ != nullptr &&
+            routesKeyboardToScene(self->input_capture_) && action == GLFW_PRESS &&
             key == GLFW_KEY_R) {
             self->active_camera_->reset();
         }
@@ -488,9 +552,15 @@ class OpenGlRenderer::Impl final {
     bool glfw_initialized_{};
     bool orbiting_{};
     bool panning_{};
+    bool left_pressed_in_scene_{};
     bool has_cursor_{};
+    double left_press_x_{};
+    double left_press_y_{};
+    double left_drag_distance_squared_{};
     double last_cursor_x_{};
     double last_cursor_y_{};
+    InputCapture input_capture_;
+    std::optional<ViewportClick> pending_viewport_click_;
     GLuint sphere_program_{};
     GLuint grid_program_{};
     GLuint sphere_vao_{};
@@ -524,6 +594,12 @@ core::Status OpenGlRenderer::render(const core::Scene& scene, Camera& camera,
 
 void OpenGlRenderer::present() { impl_->present(); }
 void OpenGlRenderer::pollEvents() { impl_->pollEvents(); }
+void OpenGlRenderer::setInputCapture(const InputCapture& capture) noexcept {
+    impl_->setInputCapture(capture);
+}
+std::optional<ViewportClick> OpenGlRenderer::takeViewportClick() noexcept {
+    return impl_->takeViewportClick();
+}
 bool OpenGlRenderer::shouldClose() const noexcept { return impl_->shouldClose(); }
 void OpenGlRenderer::requestClose() noexcept { impl_->requestClose(); }
 void* OpenGlRenderer::nativeWindowHandle() noexcept { return impl_->nativeWindowHandle(); }

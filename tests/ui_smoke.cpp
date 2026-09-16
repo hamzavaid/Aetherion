@@ -21,6 +21,7 @@ int main() {
         return 4;
     if (!ui.draw(controller, camera, settings))
         return 5;
+    renderer.setInputCapture(ui.inputCapture());
     renderer.present();
     return 0;
 }

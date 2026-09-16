@@ -6,6 +6,7 @@
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/renderer/camera.hpp"
+#include "aetherion/renderer/input_routing.hpp"
 #include "aetherion/renderer/render_data.hpp"
 
 namespace aetherion::ui {
@@ -25,6 +26,8 @@ class EngineeringUi final {
     [[nodiscard]] std::optional<core::EntityId> selectedEntity() const noexcept {
         return selected_;
     }
+    void selectEntity(std::optional<core::EntityId> entity) noexcept { selected_ = entity; }
+    [[nodiscard]] renderer::InputCapture inputCapture() const noexcept { return input_capture_; }
 
   private:
     void drawDockSpace();
@@ -42,6 +45,7 @@ class EngineeringUi final {
     std::size_t new_body_counter_{1};
     int plot_metric_{};
     std::optional<physics::IntegratorComparisonReport> comparison_;
+    renderer::InputCapture input_capture_;
 };
 
 } // namespace aetherion::ui

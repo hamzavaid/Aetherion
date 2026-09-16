@@ -219,10 +219,17 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             core::SetIntegratorCommand{static_cast<physics::IntegratorKind>(integrator)});
     }
     ImGui::SeparatorText("Visualization (does not affect physics)");
+    ImGui::Checkbox("Show engineering grid", &render_settings.show_grid);
     ImGui::InputDouble("Meters / render unit", &render_settings.meters_to_render_units, 0.0, 0.0,
                        "%.9g");
     ImGui::InputFloat("Minimum apparent radius", &render_settings.minimum_apparent_radius, 0.0F,
                       0.0F, "%.4g");
+    constexpr float minimum_radius_scale = 0.001F;
+    constexpr float maximum_radius_scale = 1.0e6F;
+    ImGui::SliderFloat("Body radius multiplier", &render_settings.body_radius_scale,
+                       minimum_radius_scale, maximum_radius_scale, "%.4gx",
+                       ImGuiSliderFlags_Logarithmic);
+    ImGui::TextDisabled("1x preserves true relative radii; display only.");
     ImGui::Checkbox("Object trails", &render_settings.trails_enabled);
     if (render_settings.trails_enabled) {
         constexpr double minimum_trail_s = 1.0;
@@ -323,6 +330,8 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;
+    const auto& io = ImGui::GetIO();
+    input_capture_ = {.mouse = io.WantCaptureMouse, .keyboard = io.WantCaptureKeyboard};
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     return core::success();

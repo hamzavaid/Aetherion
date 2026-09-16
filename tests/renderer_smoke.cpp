@@ -30,6 +30,8 @@ int main() {
     renderer.present();
     local_scene.bodies()[0].state.position_m.x = 1.0;
     local_settings.simulation_time_s = 1.0;
+    local_settings.show_grid = false;
+    local_settings.body_radius_scale = 3.0F;
     if (!renderer.render(local_scene, camera, local_settings))
         return 6;
     renderer.present();

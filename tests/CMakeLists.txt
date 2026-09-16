@@ -5,6 +5,7 @@ add_executable(aetherion_tests
   unit/simulation_clock_tests.cpp
   unit/gravity_tests.cpp
   unit/integrator_tests.cpp
+  unit/input_routing_tests.cpp
   regression/integrator_comparison_tests.cpp
   unit/camera_tests.cpp
   unit/adaptive_grid_tests.cpp

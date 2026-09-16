@@ -27,20 +27,26 @@ ctest --test-dir build/windows-gcc --output-on-failure
 
 Use `-DAETHERION_BUILD_RENDERER=OFF` when configuring a headless build.
 
-The desktop camera starts above the engineering grid looking down. It uses left-drag to orbit,
-middle/right-drag to pan, the mouse wheel to zoom, and `R` to reset. The camera-centered grid expands
-with zoom and changes spacing in 1/2/5 engineering increments so it continues across the visible
-scene. Simulation coordinates remain SI-valued doubles; rendering scale and apparent body radius are
-visualization-only values.
+The desktop camera starts above the engineering grid looking down. Left-click selects a rendered
+body, left-drag orbits, middle/right-drag pans, the mouse wheel zooms, and `R` resets the camera.
+Camera controls are suspended whenever a UI window or widget owns the corresponding input. The
+camera-centered grid expands with zoom, changes spacing in 1/2/5 engineering increments, and can be
+hidden from Simulation Controls.
+
+Simulation coordinates remain SI-valued doubles. Meters per render unit, minimum apparent radius,
+and the logarithmic body-radius multiplier are visualization-only controls and never modify physical
+radius, collision geometry, gravity, or integration. Direct scene picking follows the displayed
+radius, making visually enlarged astronomical bodies selectable.
 
 The dockable engineering workspace provides a scene hierarchy, validated property inspector,
 transport controls, global gravity/time settings, and live diagnostics. Scene and solver edits are
 queued and applied at deterministic simulation boundaries; rejected numeric input appears in the
 diagnostic command log.
 
-Selecting a body in the hierarchy highlights it in gold in the 3D scene. Object trails can be
-enabled under Simulation Controls, with a logarithmic duration slider measured in simulation
-seconds. Trail history is bounded and automatically clears when simulation time is reset.
+Selecting a body in the hierarchy or directly in the scene highlights it in gold and displays it in
+the inspector. Object trails can be enabled under Simulation Controls, with a logarithmic duration
+slider measured in simulation seconds. Trail history is bounded and automatically clears when
+simulation time is reset.
 
 Semi-Implicit Euler, Velocity Verlet, and classical RK4 are selectable at runtime. The diagnostics
 and plots report mechanical energy and momentum errors relative to the initial sample, while the

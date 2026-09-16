@@ -26,3 +26,19 @@ TEST(Picking, ReturnsNoHitForRayPointingAway) {
         .name = "body", .mass_kg = 1.0, .radius_m = 1.0, .state = {.position_m = {0, 0, -10}}}));
     EXPECT_FALSE(pickBody(scene, Ray{.origin = {}, .direction = {0, 0, 1}}));
 }
+
+TEST(Picking, UsesVisualizationRadiusForDirectSceneSelection) {
+    Scene scene;
+    const auto id = scene.createBody(Body{
+        .name = "visually enlarged",
+        .mass_kg = 1.0,
+        .radius_m = 0.1,
+        .state = {.position_m = {1.5, 0.0, -10.0}},
+    });
+    ASSERT_TRUE(id);
+    const auto ray = Ray{.origin = {}, .direction = {0.0, 0.0, -1.0}};
+    EXPECT_FALSE(pickBody(scene, ray));
+    const auto hit = pickBody(scene, ray, {.radius_scale = 1.0, .minimum_radius_m = 2.0});
+    ASSERT_TRUE(hit);
+    EXPECT_EQ(hit->id, id.value());
+}
