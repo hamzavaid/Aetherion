@@ -22,9 +22,11 @@ endif()
 
 add_library(aetherion_core
   src/core/log.cpp
+  src/core/command_queue.cpp
   src/core/scene.cpp
   src/core/simulation.cpp
   src/core/simulation_clock.cpp
+  src/core/simulation_controller.cpp
   src/core/telemetry.cpp
   src/math/vec3d.cpp
   src/physics/gravity/gravity_solver.cpp
@@ -68,20 +70,49 @@ if(AETHERION_BUILD_RENDERER)
   )
   FetchContent_MakeAvailable(glad)
   glad_add_library(aetherion_glad REPRODUCIBLE API gl:core=4.1)
+  FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG d7950e2c42cfd57020c7f9a5a90010d9c702a29f
+    GIT_SHALLOW TRUE
+  )
+  FetchContent_MakeAvailable(imgui)
   find_package(OpenGL REQUIRED)
+  add_library(aetherion_imgui
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_demo.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_glfw.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl3.cpp
+  )
+  target_include_directories(aetherion_imgui SYSTEM PUBLIC ${imgui_SOURCE_DIR} ${imgui_SOURCE_DIR}/backends)
+  target_link_libraries(aetherion_imgui PUBLIC glfw OpenGL::GL)
   target_sources(aetherion_renderer PRIVATE src/renderer/opengl_backend.cpp)
   target_link_libraries(aetherion_renderer PRIVATE glfw aetherion_glad OpenGL::GL)
   target_compile_definitions(aetherion_renderer PUBLIC AETHERION_HAS_OPENGL=1)
 
+  add_library(aetherion_ui src/ui/engineering_ui.cpp)
+  add_library(Aetherion::ui ALIAS aetherion_ui)
+  target_include_directories(aetherion_ui PUBLIC include)
+  target_link_libraries(aetherion_ui PUBLIC Aetherion::core Aetherion::renderer PRIVATE aetherion_imgui)
+  aetherion_set_project_warnings(aetherion_ui)
+
   add_executable(aetherion_renderer_smoke tests/renderer_smoke.cpp)
   target_link_libraries(aetherion_renderer_smoke PRIVATE Aetherion::renderer)
   aetherion_set_project_warnings(aetherion_renderer_smoke)
+
+  add_executable(aetherion_ui_smoke tests/ui_smoke.cpp)
+  target_link_libraries(aetherion_ui_smoke PRIVATE Aetherion::ui)
+  aetherion_set_project_warnings(aetherion_ui_smoke)
 endif()
 
 add_executable(aetherion_app src/app/main.cpp)
 target_link_libraries(aetherion_app PRIVATE Aetherion::core)
 if(AETHERION_BUILD_RENDERER)
-  target_link_libraries(aetherion_app PRIVATE Aetherion::renderer)
+  target_link_libraries(aetherion_app PRIVATE Aetherion::renderer Aetherion::ui)
+  target_compile_definitions(aetherion_app PRIVATE AETHERION_HAS_UI=1)
 endif()
 aetherion_set_project_warnings(aetherion_app)
 

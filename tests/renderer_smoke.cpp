@@ -22,6 +22,7 @@ int main() {
     if (!renderer.render(local_scene, camera, {})) {
         return 3;
     }
+    renderer.present();
 
     aetherion::core::Scene astronomical_scene;
     if (!astronomical_scene.createBody({.name = "astronomical",
@@ -35,5 +36,6 @@ int main() {
                          {.meters_to_render_units = 1.0e-7, .minimum_apparent_radius = 0.01F})) {
         return 5;
     }
+    renderer.present();
     return 0;
 }

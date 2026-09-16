@@ -230,12 +230,17 @@ class OpenGlRenderer::Impl final {
                                     static_cast<GLsizei>(gpu_instances.size()));
         }
         glBindVertexArray(0);
-        glfwSwapBuffers(window_);
         if (glGetError() != GL_NO_ERROR) {
             return core::Error{core::ErrorCode::platform_failure,
                                "OpenGL reported an error while rendering the scene"};
         }
         return core::success();
+    }
+
+    void present() {
+        if (window_ != nullptr) {
+            glfwSwapBuffers(window_);
+        }
     }
 
     void pollEvents() { glfwPollEvents(); }
@@ -247,6 +252,7 @@ class OpenGlRenderer::Impl final {
             glfwSetWindowShouldClose(window_, GLFW_TRUE);
         }
     }
+    void* nativeWindowHandle() noexcept { return window_; }
 
   private:
     static Impl* fromWindow(GLFWwindow* window) noexcept {
@@ -422,8 +428,10 @@ core::Status OpenGlRenderer::render(const core::Scene& scene, Camera& camera,
     return impl_->render(scene, camera, settings);
 }
 
+void OpenGlRenderer::present() { impl_->present(); }
 void OpenGlRenderer::pollEvents() { impl_->pollEvents(); }
 bool OpenGlRenderer::shouldClose() const noexcept { return impl_->shouldClose(); }
 void OpenGlRenderer::requestClose() noexcept { impl_->requestClose(); }
+void* OpenGlRenderer::nativeWindowHandle() noexcept { return impl_->nativeWindowHandle(); }
 
 } // namespace aetherion::renderer

@@ -51,6 +51,7 @@ class Scene final {
   public:
     [[nodiscard]] Result<EntityId> createBody(Body body);
     [[nodiscard]] bool remove(EntityId id) noexcept;
+    [[nodiscard]] Status replace(EntityId id, Body body);
     [[nodiscard]] Body* find(EntityId id) noexcept;
     [[nodiscard]] const Body* find(EntityId id) const noexcept;
     [[nodiscard]] std::vector<Body>& bodies() noexcept { return bodies_; }

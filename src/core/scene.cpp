@@ -47,6 +47,20 @@ bool Scene::remove(EntityId id) noexcept {
     return true;
 }
 
+Status Scene::replace(EntityId id, Body body) {
+    auto* existing = find(id);
+    if (existing == nullptr) {
+        return Error{ErrorCode::not_found, "body update target does not exist"};
+    }
+    body.id = id;
+    const auto validation = validate(body);
+    if (!validation) {
+        return validation;
+    }
+    *existing = std::move(body);
+    return success();
+}
+
 Body* Scene::find(EntityId id) noexcept {
     const auto position = std::find_if(bodies_.begin(), bodies_.end(),
                                        [id](const Body& body) { return body.id == id; });

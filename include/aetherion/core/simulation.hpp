@@ -16,8 +16,12 @@ class Simulation final {
   public:
     Simulation(Scene& scene, SimulationConfig config = {});
     [[nodiscard]] Status step();
+    void setPhysicsDt(double physics_dt_s);
+    void setGravityEnabled(bool enabled) noexcept { gravity_enabled_ = enabled; }
+    void reset() noexcept;
     [[nodiscard]] double timeSeconds() const noexcept { return time_s_; }
     [[nodiscard]] TelemetryRecorder& telemetry() noexcept { return telemetry_; }
+    [[nodiscard]] const TelemetryRecorder& telemetry() const noexcept { return telemetry_; }
 
   private:
     Scene& scene_;
@@ -25,6 +29,7 @@ class Simulation final {
     physics::GravitySolver gravity_;
     TelemetryRecorder telemetry_;
     double time_s_{};
+    bool gravity_enabled_{true};
 };
 
 } // namespace aetherion::core

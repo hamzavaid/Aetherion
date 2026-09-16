@@ -20,3 +20,8 @@ Use `-DAETHERION_BUILD_RENDERER=OFF` when configuring a headless build.
 The desktop camera uses left-drag to orbit, middle/right-drag to pan, the mouse wheel to zoom, and
 `R` to reset. Simulation coordinates remain SI-valued doubles; rendering scale and apparent body
 radius are visualization-only values.
+
+The dockable engineering workspace provides a scene hierarchy, validated property inspector,
+transport controls, global gravity/time settings, and live diagnostics. Scene and solver edits are
+queued and applied at deterministic simulation boundaries; rejected numeric input appears in the
+diagnostic command log.

@@ -24,9 +24,11 @@ class OpenGlRenderer final {
                                           bool visible = true);
     [[nodiscard]] core::Status render(const core::Scene& scene, Camera& camera,
                                       const RenderSettings& settings);
+    void present();
     void pollEvents();
     [[nodiscard]] bool shouldClose() const noexcept;
     void requestClose() noexcept;
+    [[nodiscard]] void* nativeWindowHandle() noexcept;
 
   private:
     class Impl;

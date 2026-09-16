@@ -5,6 +5,8 @@ add_executable(aetherion_tests
   unit/simulation_clock_tests.cpp
   unit/gravity_tests.cpp
   unit/camera_tests.cpp
+  unit/command_queue_tests.cpp
+  integration/controller_workflow_tests.cpp
   unit/mesh_tests.cpp
   unit/picking_tests.cpp
   unit/render_data_tests.cpp

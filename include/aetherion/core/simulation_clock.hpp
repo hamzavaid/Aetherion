@@ -42,6 +42,8 @@ class SimulationClock final {
     }
     [[nodiscard]] double simulationTimeSeconds() const noexcept { return simulation_time_s_; }
     [[nodiscard]] double droppedTimeSeconds() const noexcept { return dropped_time_s_; }
+    [[nodiscard]] double physicsDtSeconds() const noexcept { return config_.physics_dt_s; }
+    void configure(SimulationClockConfig config);
     void reset() noexcept;
 
   private:
