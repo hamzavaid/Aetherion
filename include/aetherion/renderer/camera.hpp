@@ -26,8 +26,8 @@ class Camera final {
   private:
     math::Vec3d target_world_m_{};
     double distance_m_{10.0};
-    double yaw_rad_{};
-    double pitch_rad_{};
+    double yaw_rad_{0.65};
+    double pitch_rad_{0.65};
     double vertical_fov_rad_{0.7853981633974483};
 };
 

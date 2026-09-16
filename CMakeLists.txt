@@ -42,10 +42,12 @@ target_include_directories(aetherion_core PUBLIC include)
 aetherion_set_project_warnings(aetherion_core)
 
 add_library(aetherion_renderer
+  src/renderer/adaptive_grid.cpp
   src/renderer/camera.cpp
   src/renderer/mesh.cpp
   src/renderer/picking.cpp
   src/renderer/render_data.cpp
+  src/renderer/trail_history.cpp
 )
 add_library(Aetherion::renderer ALIAS aetherion_renderer)
 target_include_directories(aetherion_renderer PUBLIC include)

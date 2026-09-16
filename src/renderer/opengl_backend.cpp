@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -13,7 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include "aetherion/renderer/adaptive_grid.hpp"
 #include "aetherion/renderer/mesh.hpp"
+#include "aetherion/renderer/trail_history.hpp"
 
 namespace aetherion::renderer {
 namespace {
@@ -25,13 +28,16 @@ layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec3 iPosition;
 layout(location = 3) in float iRadius;
 layout(location = 4) in vec3 iColor;
+layout(location = 5) in float iHighlighted;
 uniform mat4 uViewProjection;
 out vec3 vNormal;
 out vec3 vColor;
+out float vHighlighted;
 void main() {
     gl_Position = uViewProjection * vec4(iPosition + aPosition * iRadius, 1.0);
     vNormal = aNormal;
     vColor = iColor;
+    vHighlighted = iHighlighted;
 }
 )";
 
@@ -39,11 +45,14 @@ constexpr const char* sphere_fragment_shader = R"(
 #version 410 core
 in vec3 vNormal;
 in vec3 vColor;
+in float vHighlighted;
 out vec4 fragmentColor;
 void main() {
     vec3 lightDirection = normalize(vec3(0.35, 0.8, 0.45));
     float diffuse = max(dot(normalize(vNormal), lightDirection), 0.0);
-    fragmentColor = vec4(vColor * (0.18 + 0.82 * diffuse), 1.0);
+    vec3 shaded = vColor * (0.18 + 0.82 * diffuse);
+    vec3 highlighted = mix(shaded, vec3(1.0, 0.68, 0.08), 0.82) + vec3(0.12);
+    fragmentColor = vec4(mix(shaded, highlighted, vHighlighted), 1.0);
 }
 )";
 
@@ -71,6 +80,7 @@ struct InstanceGpu {
     std::array<float, 3> position;
     float radius{};
     std::array<float, 3> color;
+    float highlighted{};
 };
 
 struct GridVertexGpu {
@@ -175,6 +185,7 @@ class OpenGlRenderer::Impl final {
         grid_program_ = grid_program.value();
         createSphereResources();
         createGridResources();
+        createTrailResources();
         glEnable(GL_DEPTH_TEST);
         glEnable(GL_CULL_FACE);
         return core::success();
@@ -200,8 +211,16 @@ class OpenGlRenderer::Impl final {
             gpu_instances.push_back(
                 {{instance.position.x, instance.position.y, instance.position.z},
                  instance.radius,
-                 {instance.color.x, instance.color.y, instance.color.z}});
+                 {instance.color.x, instance.color.y, instance.color.z},
+                 instance.highlighted ? 1.0F : 0.0F});
         }
+
+        if (settings.trails_enabled) {
+            trail_history_.sample(scene, settings.simulation_time_s, settings.trail_duration_s);
+        } else {
+            trail_history_.clear();
+        }
+        updateGridResources(camera, settings);
 
         glViewport(0, 0, width, height);
         glClearColor(0.018F, 0.026F, 0.045F, 1.0F);
@@ -210,12 +229,12 @@ class OpenGlRenderer::Impl final {
         glUseProgram(grid_program_);
         glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
                            matrix.data());
-        const auto grid_origin =
-            toCameraRelative({}, camera.positionWorld(), settings.meters_to_render_units);
-        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), grid_origin.x,
-                    grid_origin.y, grid_origin.z);
+        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), grid_origin_.x,
+                    grid_origin_.y, grid_origin_.z);
         glBindVertexArray(grid_vao_);
         glDrawArrays(GL_LINES, 0, grid_vertex_count_);
+
+        drawTrails(scene, camera, settings, matrix);
 
         if (!gpu_instances.empty()) {
             glUseProgram(sphere_program_);
@@ -345,26 +364,17 @@ class OpenGlRenderer::Impl final {
         glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(InstanceGpu),
                               reinterpret_cast<void*>(4U * sizeof(float)));
         glVertexAttribDivisor(4, 1);
+        glEnableVertexAttribArray(5);
+        glVertexAttribPointer(5, 1, GL_FLOAT, GL_FALSE, sizeof(InstanceGpu),
+                              reinterpret_cast<void*>(7U * sizeof(float)));
+        glVertexAttribDivisor(5, 1);
     }
 
     void createGridResources() {
-        const auto lines = makeEngineeringGrid(50.0F, 1.0F);
-        std::vector<GridVertexGpu> vertices;
-        vertices.reserve(lines.size() * 2U);
-        for (const auto& line : lines) {
-            const std::array<float, 3> color =
-                line.major_axis ? std::array{0.35F, 0.48F, 0.62F} : std::array{0.11F, 0.16F, 0.22F};
-            vertices.push_back({{line.start.x, line.start.y, line.start.z}, color});
-            vertices.push_back({{line.end.x, line.end.y, line.end.z}, color});
-        }
-        grid_vertex_count_ = static_cast<GLsizei>(vertices.size());
         glGenVertexArrays(1, &grid_vao_);
         glGenBuffers(1, &grid_vbo_);
         glBindVertexArray(grid_vao_);
         glBindBuffer(GL_ARRAY_BUFFER, grid_vbo_);
-        glBufferData(GL_ARRAY_BUFFER,
-                     static_cast<GLsizeiptr>(vertices.size() * sizeof(GridVertexGpu)),
-                     vertices.data(), GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GridVertexGpu), nullptr);
         glEnableVertexAttribArray(1);
@@ -373,11 +383,91 @@ class OpenGlRenderer::Impl final {
         glBindVertexArray(0);
     }
 
+    void updateGridResources(const Camera& camera, const RenderSettings& settings) {
+        const auto parameters =
+            calculateAdaptiveGrid(camera.distanceMeters(), settings.meters_to_render_units);
+        const double spacing_m = parameters.spacing_render_units / settings.meters_to_render_units;
+        const auto& target = camera.targetWorld();
+        const math::Vec3d center_world_m{std::floor(target.x / spacing_m) * spacing_m, 0.0,
+                                         std::floor(target.z / spacing_m) * spacing_m};
+        grid_origin_ = toCameraRelative(center_world_m, camera.positionWorld(),
+                                        settings.meters_to_render_units);
+        std::vector<GridVertexGpu> vertices;
+        const auto subdivisions = static_cast<int>(parameters.subdivisions_each_direction);
+        vertices.reserve(static_cast<std::size_t>(4 * (2 * subdivisions + 1)));
+        const float extent = static_cast<float>(parameters.half_extent_render_units);
+        const float spacing = static_cast<float>(parameters.spacing_render_units);
+        for (int index = -subdivisions; index <= subdivisions; ++index) {
+            const float coordinate = static_cast<float>(index) * spacing;
+            const bool major = index % 10 == 0;
+            const std::array<float, 3> color =
+                major ? std::array{0.32F, 0.44F, 0.58F} : std::array{0.09F, 0.13F, 0.18F};
+            vertices.push_back({{coordinate, 0.0F, -extent}, color});
+            vertices.push_back({{coordinate, 0.0F, extent}, color});
+            vertices.push_back({{-extent, 0.0F, coordinate}, color});
+            vertices.push_back({{extent, 0.0F, coordinate}, color});
+        }
+        grid_vertex_count_ = static_cast<GLsizei>(vertices.size());
+        glBindVertexArray(grid_vao_);
+        glBindBuffer(GL_ARRAY_BUFFER, grid_vbo_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(vertices.size() * sizeof(GridVertexGpu)),
+                     vertices.data(), GL_STREAM_DRAW);
+        glBindVertexArray(0);
+    }
+
+    void createTrailResources() {
+        glGenVertexArrays(1, &trail_vao_);
+        glGenBuffers(1, &trail_vbo_);
+        glBindVertexArray(trail_vao_);
+        glBindBuffer(GL_ARRAY_BUFFER, trail_vbo_);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GridVertexGpu), nullptr);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GridVertexGpu),
+                              reinterpret_cast<void*>(3U * sizeof(float)));
+        glBindVertexArray(0);
+    }
+
+    void drawTrails(const core::Scene& scene, const Camera& camera, const RenderSettings& settings,
+                    const Mat4f& matrix) {
+        if (!settings.trails_enabled)
+            return;
+        glUseProgram(grid_program_);
+        glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
+                           matrix.data());
+        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
+        glBindVertexArray(trail_vao_);
+        for (const auto& [id, trail] : trail_history_.trails()) {
+            if (trail.points.size() < 2U || scene.find(id) == nullptr)
+                continue;
+            const bool selected = settings.selected_entity == id;
+            const std::array<float, 3> color =
+                selected ? std::array{1.0F, 0.68F, 0.08F} : std::array{0.18F, 0.62F, 0.95F};
+            std::vector<GridVertexGpu> vertices;
+            vertices.reserve(trail.points.size());
+            for (const auto& point : trail.points) {
+                const auto relative =
+                    toCameraRelative(point.position_world_m, camera.positionWorld(),
+                                     settings.meters_to_render_units);
+                vertices.push_back({{relative.x, relative.y, relative.z}, color});
+            }
+            glBindBuffer(GL_ARRAY_BUFFER, trail_vbo_);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(vertices.size() * sizeof(GridVertexGpu)),
+                         vertices.data(), GL_STREAM_DRAW);
+            glDrawArrays(GL_LINE_STRIP, 0, static_cast<GLsizei>(vertices.size()));
+        }
+        glBindVertexArray(0);
+    }
+
     void shutdown() noexcept {
         if (window_ != nullptr) {
             glfwMakeContextCurrent(window_);
             glDeleteBuffers(1, &grid_vbo_);
             glDeleteVertexArrays(1, &grid_vao_);
+            glDeleteBuffers(1, &trail_vbo_);
+            glDeleteVertexArrays(1, &trail_vao_);
             glDeleteBuffers(1, &instance_vbo_);
             glDeleteBuffers(1, &sphere_ebo_);
             glDeleteBuffers(1, &sphere_vbo_);
@@ -409,8 +499,12 @@ class OpenGlRenderer::Impl final {
     GLuint instance_vbo_{};
     GLuint grid_vao_{};
     GLuint grid_vbo_{};
+    GLuint trail_vao_{};
+    GLuint trail_vbo_{};
     GLsizei sphere_index_count_{};
     GLsizei grid_vertex_count_{};
+    Vec3f grid_origin_{};
+    TrailHistory trail_history_;
 };
 
 OpenGlRenderer::OpenGlRenderer() : impl_(std::make_unique<Impl>()) {}

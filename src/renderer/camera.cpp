@@ -67,8 +67,8 @@ void Camera::focus(const math::Vec3d& target_world_m, double bounding_radius_m) 
 void Camera::reset() noexcept {
     target_world_m_ = {};
     distance_m_ = 10.0;
-    yaw_rad_ = 0.0;
-    pitch_rad_ = 0.0;
+    yaw_rad_ = 0.65;
+    pitch_rad_ = 0.65;
 }
 
 math::Vec3d Camera::positionWorld() const noexcept {

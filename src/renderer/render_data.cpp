@@ -45,7 +45,8 @@ std::vector<BodyInstance> buildBodyInstances(const core::Scene& scene,
                                               settings.meters_to_render_units),
                              radius,
                              {0.25F + 0.7F * mass_tint, 0.55F, 1.0F - 0.5F * mass_tint},
-                             body.id});
+                             body.id,
+                             settings.selected_entity == body.id});
     }
     return instances;
 }

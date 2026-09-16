@@ -13,15 +13,25 @@ int main() {
     }
     aetherion::renderer::Camera camera;
     aetherion::core::Scene local_scene;
-    if (!local_scene.createBody({.name = "local",
-                                 .mass_kg = 1.0,
-                                 .radius_m = 1.0,
-                                 .state = {.position_m = {0.0, 0.0, 0.0}}})) {
+    const auto local_id = local_scene.createBody({.name = "local",
+                                                  .mass_kg = 1.0,
+                                                  .radius_m = 1.0,
+                                                  .state = {.position_m = {0.0, 0.0, 0.0}}});
+    if (!local_id) {
         return 2;
     }
-    if (!renderer.render(local_scene, camera, {})) {
+    aetherion::renderer::RenderSettings local_settings{.selected_entity = local_id.value(),
+                                                       .trails_enabled = true,
+                                                       .trail_duration_s = 10.0,
+                                                       .simulation_time_s = 0.0};
+    if (!renderer.render(local_scene, camera, local_settings)) {
         return 3;
     }
+    renderer.present();
+    local_scene.bodies()[0].state.position_m.x = 1.0;
+    local_settings.simulation_time_s = 1.0;
+    if (!renderer.render(local_scene, camera, local_settings))
+        return 6;
     renderer.present();
 
     aetherion::core::Scene astronomical_scene;

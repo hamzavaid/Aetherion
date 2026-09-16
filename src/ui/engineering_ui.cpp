@@ -223,6 +223,14 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                        "%.9g");
     ImGui::InputFloat("Minimum apparent radius", &render_settings.minimum_apparent_radius, 0.0F,
                       0.0F, "%.4g");
+    ImGui::Checkbox("Object trails", &render_settings.trails_enabled);
+    if (render_settings.trails_enabled) {
+        constexpr double minimum_trail_s = 1.0;
+        constexpr double maximum_trail_s = presets::earth_like_orbit_period_s;
+        ImGui::SliderScalar("Trail duration (s)", ImGuiDataType_Double,
+                            &render_settings.trail_duration_s, &minimum_trail_s, &maximum_trail_s,
+                            "%.4g s", ImGuiSliderFlags_Logarithmic);
+    }
     ImGui::End();
 }
 
@@ -314,6 +322,7 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     drawSimulationControls(controller, render_settings);
     drawDiagnostics(controller);
     drawPlots(controller);
+    render_settings.selected_entity = selected_;
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     return core::success();

@@ -7,11 +7,13 @@ add_executable(aetherion_tests
   unit/integrator_tests.cpp
   regression/integrator_comparison_tests.cpp
   unit/camera_tests.cpp
+  unit/adaptive_grid_tests.cpp
   unit/command_queue_tests.cpp
   integration/controller_workflow_tests.cpp
   unit/mesh_tests.cpp
   unit/picking_tests.cpp
   unit/render_data_tests.cpp
+  unit/trail_history_tests.cpp
   unit/semi_implicit_euler_tests.cpp
   regression/earth_orbit_tests.cpp
   unit/telemetry_tests.cpp

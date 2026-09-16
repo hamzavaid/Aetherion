@@ -29,3 +29,16 @@ TEST(RenderData, InstancesSupportPhysicalScaleAndMinimumApparentRadius) {
     EXPECT_FLOAT_EQ(instances[0].position.x, 1.0F);
     EXPECT_FLOAT_EQ(instances[0].radius, 2.0F);
 }
+
+TEST(RenderData, MarksSelectedHierarchyEntityForHighlighting) {
+    Scene scene;
+    const auto first = scene.createBody(Body{.name = "first", .mass_kg = 1.0, .radius_m = 1.0});
+    const auto second = scene.createBody(Body{.name = "second", .mass_kg = 1.0, .radius_m = 1.0});
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(second);
+    const auto instances =
+        buildBodyInstances(scene, {}, RenderSettings{.selected_entity = second.value()});
+    ASSERT_EQ(instances.size(), 2U);
+    EXPECT_FALSE(instances[0].highlighted);
+    EXPECT_TRUE(instances[1].highlighted);
+}

@@ -28,3 +28,10 @@ TEST(Camera, CenterViewportRayPointsAtOrbitTarget) {
     EXPECT_NEAR(aetherion::math::dot(ray.direction, expected), 1.0, 1.0e-12);
     EXPECT_EQ(ray.origin, camera.positionWorld());
 }
+
+TEST(Camera, DefaultViewStartsAboveGridAndLooksDownTowardTarget) {
+    Camera camera;
+    EXPECT_GT(camera.positionWorld().y, camera.targetWorld().y);
+    const auto ray = camera.rayFromNdc(0.0, 0.0, 1.0);
+    EXPECT_LT(ray.direction.y, 0.0);
+}
