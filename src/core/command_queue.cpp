@@ -98,6 +98,13 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
 
 } // namespace
 
+std::size_t CommandQueue::discardPending() {
+    std::scoped_lock lock(mutex_);
+    const auto count = pending_.size();
+    pending_.clear();
+    return count;
+}
+
 void CommandQueue::enqueue(SimulationCommand command) {
     std::scoped_lock lock(mutex_);
     pending_.push_back(std::move(command));

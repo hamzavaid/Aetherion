@@ -1,12 +1,13 @@
 #include "aetherion/core/simulation_controller.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace aetherion::core {
 
 SimulationController::SimulationController(Scene initial_scene, SimulationControllerConfig config)
-    : scene_(std::move(initial_scene)), initial_scene_(scene_), settings_(config),
-      simulation_(scene_, {.physics_dt_s = config.physics_dt_s}),
+    : scene_(std::move(initial_scene)), initial_scene_(scene_), initial_settings_(config),
+      settings_(config), simulation_(scene_, {.physics_dt_s = config.physics_dt_s}),
       clock_({config.physics_dt_s, config.time_scale, config.max_substeps}) {
     synchronizePhysicsSettings();
 }
@@ -54,14 +55,47 @@ Status SimulationController::singleStep() {
     return simulation_.step();
 }
 
-void SimulationController::reset() {
-    scene_ = initial_scene_;
-    simulation_.reset();
-    clock_.reset();
-    playing_ = false;
+CheckpointId SimulationController::saveCheckpoint() {
     applyCommandsAtBoundary();
     synchronizePhysicsSettings();
     synchronizeClockSettings();
+    constexpr std::size_t maximum_checkpoints = 64U;
+    if (checkpoints_.size() == maximum_checkpoints)
+        checkpoints_.erase(checkpoints_.begin());
+    const CheckpointId id = next_checkpoint_id_++;
+    checkpoints_.push_back({id, scene_, settings_, simulation_.timeSeconds()});
+    return id;
+}
+
+Status SimulationController::restoreCheckpoint(CheckpointId id) {
+    const auto checkpoint = std::find_if(checkpoints_.begin(), checkpoints_.end(),
+                                         [id](const auto& entry) { return entry.id == id; });
+    if (checkpoint == checkpoints_.end()) {
+        return Error{ErrorCode::not_found, "simulation checkpoint does not exist"};
+    }
+    restoreState(checkpoint->scene, checkpoint->settings, checkpoint->simulation_time_s);
+    return success();
+}
+
+void SimulationController::restoreState(const Scene& scene, const RuntimeSettings& settings,
+                                        double time_s) {
+    static_cast<void>(commands_.discardPending());
+    scene_ = scene;
+    settings_ = settings;
+    simulation_.reset(time_s);
+    clock_.reset();
+    playing_ = false;
+    synchronizePhysicsSettings();
+    synchronizeClockSettings();
+}
+
+void SimulationController::reset() {
+    if (!checkpoints_.empty()) {
+        const auto& latest = checkpoints_.back();
+        restoreState(latest.scene, latest.settings, latest.simulation_time_s);
+        return;
+    }
+    restoreState(initial_scene_, initial_settings_, 0.0);
 }
 
 } // namespace aetherion::core

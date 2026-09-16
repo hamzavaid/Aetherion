@@ -52,10 +52,13 @@ void Simulation::setPhysicsDt(double physics_dt_s) {
     config_.physics_dt_s = physics_dt_s;
 }
 
-void Simulation::reset() noexcept {
-    time_s_ = 0.0;
+void Simulation::reset(double time_s) {
+    if (!std::isfinite(time_s) || time_s < 0.0) {
+        throw std::invalid_argument("simulation reset time must be finite and non-negative in s");
+    }
+    time_s_ = time_s;
     telemetry_.clear();
-    static_cast<void>(telemetry_.sample(scene_, 0.0));
+    static_cast<void>(telemetry_.sample(scene_, time_s_));
 }
 
 } // namespace aetherion::core

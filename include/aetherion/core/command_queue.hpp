@@ -78,6 +78,8 @@ class CommandQueue final {
     void enqueue(SimulationCommand command);
     [[nodiscard]] CommandApplyReport apply(Scene& scene, RuntimeSettings& settings,
                                            double simulation_time_s);
+    /// Discards unapplied edits when an explicit checkpoint restore replaces the current state.
+    [[nodiscard]] std::size_t discardPending();
     [[nodiscard]] std::size_t pendingCount() const;
     [[nodiscard]] const std::vector<CommandEvent>& eventLog() const noexcept { return event_log_; }
 

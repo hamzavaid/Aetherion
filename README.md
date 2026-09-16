@@ -43,6 +43,11 @@ transport controls, global gravity/time settings, and live diagnostics. Scene an
 queued and applied at deterministic simulation boundaries; rejected numeric input appears in the
 diagnostic command log.
 
+**Save** creates an in-session checkpoint of the complete physical scene, simulation time, and
+runtime solver settings. **Reset** restores the latest checkpoint, or the startup preset when no
+checkpoint exists. Save History lists up to 64 checkpoints in newest-first order and can restore any
+retained state; restoring pauses the simulation and establishes a fresh telemetry baseline.
+
 Selecting a body in the hierarchy or directly in the scene highlights it in gold and displays it in
 the inspector. Object trails can be enabled under Simulation Controls, with a logarithmic duration
 slider measured in simulation seconds. Trail history is bounded and automatically clears when

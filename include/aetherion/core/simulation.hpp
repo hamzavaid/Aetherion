@@ -25,7 +25,9 @@ class Simulation final {
     void setIntegrator(physics::IntegratorKind integrator) noexcept {
         config_.integrator = integrator;
     }
-    void reset() noexcept;
+    /// Clears diagnostics and establishes a new baseline at the supplied simulation time in
+    /// seconds.
+    void reset(double time_s = 0.0);
     [[nodiscard]] double timeSeconds() const noexcept { return time_s_; }
     [[nodiscard]] TelemetryRecorder& telemetry() noexcept { return telemetry_; }
     [[nodiscard]] const TelemetryRecorder& telemetry() const noexcept { return telemetry_; }

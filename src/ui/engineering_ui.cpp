@@ -197,8 +197,40 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     if (ImGui::Button("Single Step"))
         static_cast<void>(controller.singleStep());
     ImGui::SameLine();
-    if (ImGui::Button("Reset"))
+    if (ImGui::Button("Save"))
+        static_cast<void>(controller.saveCheckpoint());
+    ImGui::SameLine();
+    if (ImGui::Button("Reset")) {
         controller.reset();
+        if (selected_ && controller.scene().find(*selected_) == nullptr)
+            selected_.reset();
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Restore the most recent save, or the startup preset if none exists.");
+
+    ImGui::SeparatorText("Save History (current session)");
+    const auto& checkpoints = controller.checkpoints();
+    if (checkpoints.empty()) {
+        ImGui::TextDisabled("No saves yet.");
+    } else {
+        if (ImGui::BeginChild("SaveHistory", {0.0F, 105.0F}, ImGuiChildFlags_Borders)) {
+            for (auto checkpoint = checkpoints.rbegin(); checkpoint != checkpoints.rend();
+                 ++checkpoint) {
+                ImGui::PushID(static_cast<int>(checkpoint->id));
+                if (ImGui::SmallButton("Restore")) {
+                    static_cast<void>(controller.restoreCheckpoint(checkpoint->id));
+                    if (selected_ && controller.scene().find(*selected_) == nullptr)
+                        selected_.reset();
+                }
+                ImGui::SameLine();
+                ImGui::Text("Save %llu | t=%.9g s | %zu bodies",
+                            static_cast<unsigned long long>(checkpoint->id),
+                            checkpoint->simulation_time_s, checkpoint->scene.size());
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
+    }
 
     double dt = controller.settings().physics_dt_s;
     if (ImGui::InputDouble("Physics dt (s)", &dt, 0.0, 0.0, "%.9g")) {

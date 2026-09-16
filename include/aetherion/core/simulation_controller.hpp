@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <vector>
 
 #include "aetherion/core/command_queue.hpp"
 #include "aetherion/core/simulation.hpp"
@@ -9,6 +11,14 @@
 namespace aetherion::core {
 
 using SimulationControllerConfig = RuntimeSettings;
+using CheckpointId = std::uint64_t;
+
+struct SimulationCheckpoint {
+    CheckpointId id{};
+    Scene scene;
+    RuntimeSettings settings;
+    double simulation_time_s{};
+};
 
 /// UI-facing runtime facade. Scene mutation occurs only when its command queue is drained.
 class SimulationController final {
@@ -16,6 +26,10 @@ class SimulationController final {
     explicit SimulationController(Scene initial_scene, SimulationControllerConfig config = {});
     [[nodiscard]] Status update(double real_delta_s);
     [[nodiscard]] Status singleStep();
+    /// Saves the current scene and runtime state after applying pending commands.
+    [[nodiscard]] CheckpointId saveCheckpoint();
+    /// Restores a historical checkpoint and pauses execution.
+    [[nodiscard]] Status restoreCheckpoint(CheckpointId id);
     void reset();
     void setPlaying(bool playing) noexcept { playing_ = playing; }
 
@@ -25,6 +39,9 @@ class SimulationController final {
     [[nodiscard]] CommandQueue& commands() noexcept { return commands_; }
     [[nodiscard]] const CommandQueue& commands() const noexcept { return commands_; }
     [[nodiscard]] const RuntimeSettings& settings() const noexcept { return settings_; }
+    [[nodiscard]] const std::vector<SimulationCheckpoint>& checkpoints() const noexcept {
+        return checkpoints_;
+    }
     [[nodiscard]] double simulationTimeSeconds() const noexcept {
         return simulation_.timeSeconds();
     }
@@ -36,13 +53,17 @@ class SimulationController final {
     void applyCommandsAtBoundary();
     void synchronizePhysicsSettings();
     void synchronizeClockSettings();
+    void restoreState(const Scene& scene, const RuntimeSettings& settings, double time_s);
 
     Scene scene_;
     Scene initial_scene_;
+    RuntimeSettings initial_settings_;
     RuntimeSettings settings_;
     Simulation simulation_;
     SimulationClock clock_;
     CommandQueue commands_;
+    std::vector<SimulationCheckpoint> checkpoints_;
+    CheckpointId next_checkpoint_id_{1};
     bool playing_{};
 };
 
