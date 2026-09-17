@@ -10,6 +10,9 @@ struct ElectromagneticPreset {
     core::Scene scene;
     core::RuntimeSettings runtime;
     renderer::FieldVisualizationSettings visualization;
+    double meters_to_render_units{1.0};
+    float minimum_apparent_radius{0.01F};
+    float body_radius_scale{1.0F};
 };
 
 [[nodiscard]] ElectromagneticPreset makeLikeChargesPreset();

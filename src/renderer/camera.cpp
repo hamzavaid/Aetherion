@@ -120,7 +120,9 @@ Mat4f Camera::viewProjection(double aspect_ratio, double meters_to_render_units)
                         0.0F,
                         1.0F};
     const double rendered_distance = distance_m_ * meters_to_render_units;
-    const double near_plane = std::max(rendered_distance * 1.0e-6, 1.0e-6);
+    // Camera-relative coordinates permit the clip range to scale with the selected unit mapping.
+    // A fixed render-unit floor clips meter-scale scenes after an astronomical preset uses 1e-9.
+    const double near_plane = std::max(rendered_distance * 1.0e-6, 1.0e-30);
     const double far_plane = std::max(rendered_distance * 1.0e6, near_plane * 10.0);
     const double scale = 1.0 / std::tan(vertical_fov_rad_ * 0.5);
     Mat4f projection{};

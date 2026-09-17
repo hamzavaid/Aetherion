@@ -134,8 +134,8 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller) {
     ImGui::End();
 }
 
-void EngineeringUi::drawInspector(core::SimulationController& controller,
-                                  renderer::Camera& camera) {
+void EngineeringUi::drawInspector(core::SimulationController& controller, renderer::Camera& camera,
+                                  const renderer::RenderSettings& render_settings) {
     ImGui::Begin("Inspector");
     if (!selected_) {
         ImGui::TextUnformatted("Select a body in the hierarchy.");
@@ -206,11 +206,13 @@ void EngineeringUi::drawInspector(core::SimulationController& controller,
             core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
     }
     if (ImGui::Button("Focus Camera"))
-        camera.focus(body->state.position_m, body->radius_m);
+        camera.focus(body->state.position_m,
+                     renderer::visualBodyRadiusMeters(*body, render_settings));
     ImGui::End();
 }
 
 void EngineeringUi::drawSimulationControls(core::SimulationController& controller,
+                                           renderer::Camera& camera,
                                            renderer::RenderSettings& render_settings) {
     ImGui::Begin("Simulation Controls");
     if (ImGui::Button(controller.isPlaying() ? "Pause" : "Play")) {
@@ -271,6 +273,15 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                 controller.loadState(std::move(loaded.scene), std::move(loaded.runtime));
             if (status) {
                 render_settings = std::move(loaded.visualization);
+                const auto bounds =
+                    renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
+                const auto& field = render_settings.field_visualization;
+                const double field_radius =
+                    field.mode == renderer::FieldDisplayMode::none
+                        ? 0.0
+                        : (field.region.center_m - bounds.center_world_m).norm() +
+                              field.region.half_extent_m.norm();
+                camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
                 selected_.reset();
                 scene_file_status_ = "Loaded aetherion_scene.json";
             } else {
@@ -413,7 +424,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     }
     ImGui::SeparatorText("Visualization (does not affect physics)");
     ImGui::Checkbox("Show engineering grid", &render_settings.show_grid);
-    ImGui::InputDouble("Meters / render unit", &render_settings.meters_to_render_units, 0.0, 0.0,
+    ImGui::InputDouble("Render units / meter", &render_settings.meters_to_render_units, 0.0, 0.0,
                        "%.9g");
     ImGui::InputFloat("Minimum apparent radius", &render_settings.minimum_apparent_radius, 0.0F,
                       0.0F, "%.4g");
@@ -503,6 +514,18 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     const auto load_preset = [&](presets::ElectromagneticPreset preset) {
         if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
             render_settings.field_visualization = std::move(preset.visualization);
+            render_settings.meters_to_render_units = preset.meters_to_render_units;
+            render_settings.minimum_apparent_radius = preset.minimum_apparent_radius;
+            render_settings.body_radius_scale = preset.body_radius_scale;
+            const auto bounds =
+                renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
+            const auto& preset_field = render_settings.field_visualization;
+            const double field_radius =
+                preset_field.mode == renderer::FieldDisplayMode::none
+                    ? 0.0
+                    : (preset_field.region.center_m - bounds.center_world_m).norm() +
+                          preset_field.region.half_extent_m.norm();
+            camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
             selected_.reset();
         }
     };
@@ -654,8 +677,8 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     ImGui::NewFrame();
     drawDockSpace();
     drawHierarchy(controller);
-    drawInspector(controller, camera);
-    drawSimulationControls(controller, render_settings);
+    drawInspector(controller, camera, render_settings);
+    drawSimulationControls(controller, camera, render_settings);
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;

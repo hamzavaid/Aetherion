@@ -7,6 +7,7 @@ using aetherion::core::Scene;
 using aetherion::renderer::buildBodyInstances;
 using aetherion::renderer::RenderSettings;
 using aetherion::renderer::toCameraRelative;
+using aetherion::renderer::visualBodyRadiusMeters;
 
 TEST(RenderData, CameraRelativeConversionPreservesLocalDetailAtAstronomicalOrigin) {
     const auto relative =
@@ -53,4 +54,15 @@ TEST(RenderData, BodyRadiusScaleChangesOnlyVisualInstanceRadius) {
     ASSERT_EQ(instances.size(), 1U);
     EXPECT_FLOAT_EQ(instances[0].radius, 4.0F);
     EXPECT_DOUBLE_EQ(scene.bodies()[0].radius_m, 2.0);
+}
+
+TEST(RenderData, FocusRadiusIncludesMinimumApparentAndBodyScale) {
+    const Body body{.name = "charge", .mass_kg = 1.0, .radius_m = 0.08};
+    const RenderSettings astronomical_scale{.meters_to_render_units = 1.0e-9,
+                                            .minimum_apparent_radius = 0.35F,
+                                            .body_radius_scale = 4.0F};
+    EXPECT_NEAR(visualBodyRadiusMeters(body, astronomical_scale), 3.5e8, 10.0);
+    const RenderSettings local_scale{
+        .meters_to_render_units = 1.0, .minimum_apparent_radius = 0.01F, .body_radius_scale = 4.0F};
+    EXPECT_DOUBLE_EQ(visualBodyRadiusMeters(body, local_scale), 0.32);
 }

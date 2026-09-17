@@ -35,3 +35,12 @@ TEST(Camera, DefaultViewStartsAboveGridAndLooksDownTowardTarget) {
     const auto ray = camera.rayFromNdc(0.0, 0.0, 1.0);
     EXPECT_LT(ray.direction.y, 0.0);
 }
+
+TEST(Camera, ProjectionRetainsScaleInvarianceForMeterAndAstronomicalRenderUnits) {
+    Camera camera;
+    camera.focus({}, 0.08);
+    const auto meter_scale = camera.viewProjection(16.0 / 9.0, 1.0);
+    const auto astronomical_scale = camera.viewProjection(16.0 / 9.0, 1.0e-9);
+    EXPECT_NEAR(astronomical_scale[10], meter_scale[10], 1.0e-6F);
+    EXPECT_NEAR(astronomical_scale[14], meter_scale[14] * 1.0e-9F, 1.0e-15F);
+}

@@ -33,8 +33,9 @@ class EngineeringUi final {
   private:
     void drawDockSpace();
     void drawHierarchy(core::SimulationController& controller);
-    void drawInspector(core::SimulationController& controller, renderer::Camera& camera);
-    void drawSimulationControls(core::SimulationController& controller,
+    void drawInspector(core::SimulationController& controller, renderer::Camera& camera,
+                       const renderer::RenderSettings& render_settings);
+    void drawSimulationControls(core::SimulationController& controller, renderer::Camera& camera,
                                 renderer::RenderSettings& render_settings);
     void drawDiagnostics(const core::SimulationController& controller);
     void drawPlots(const core::SimulationController& controller);

@@ -29,10 +29,20 @@ struct BodyInstance {
     bool highlighted{};
 };
 
+struct SceneFocusBounds {
+    math::Vec3d center_world_m;
+    double radius_m{1.0};
+};
+
 /// Subtracts the double-precision camera origin before checked conversion to GPU float units.
 [[nodiscard]] Vec3f toCameraRelative(const math::Vec3d& world_position_m,
                                      const math::Vec3d& camera_origin_m,
                                      double meters_to_render_units);
+/// Returns the body's effective display radius converted back to world meters for camera framing.
+[[nodiscard]] double visualBodyRadiusMeters(const core::Body& body, const RenderSettings& settings);
+/// Computes an axis-aligned display-aware scene bound suitable for Camera::focus.
+[[nodiscard]] SceneFocusBounds calculateSceneFocusBounds(const core::Scene& scene,
+                                                         const RenderSettings& settings);
 [[nodiscard]] std::vector<BodyInstance> buildBodyInstances(const core::Scene& scene,
                                                            const math::Vec3d& camera_origin_m,
                                                            const RenderSettings& settings);

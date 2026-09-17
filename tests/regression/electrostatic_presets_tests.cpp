@@ -21,4 +21,16 @@ TEST(ElectrostaticPresets, LikeOppositeAndDipoleHaveExpectedFieldsAndDefaults) {
     const auto sample = provider.sample({0.0, 1.0, 0.0}, 0.0);
     EXPECT_TRUE(sample.valid);
     EXPECT_GT(sample.electric_Vpm.x, 0.0);
+    EXPECT_DOUBLE_EQ(dipole.meters_to_render_units, 1.0);
+    EXPECT_LT(dipole.minimum_apparent_radius, 0.1F);
+
+    auto vector_settings = dipole.visualization;
+    vector_settings.mode = aetherion::renderer::FieldDisplayMode::observed_vectors;
+    const auto glyphs = aetherion::renderer::sampleObservedField(provider, vector_settings, 0.0);
+    EXPECT_FALSE(glyphs.empty());
+    auto seeds =
+        aetherion::renderer::generateAutomaticFieldSeeds(dipole.scene, dipole.visualization);
+    const auto lines =
+        aetherion::renderer::traceFieldLines(provider, dipole.visualization, seeds, 0.0);
+    EXPECT_FALSE(lines.empty());
 }
