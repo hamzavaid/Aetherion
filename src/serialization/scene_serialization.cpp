@@ -217,6 +217,14 @@ math::Vec3d vector(const Json& value) {
     }
     return result;
 }
+std::array<float, 3> color(const Json& value) {
+    const auto decoded = vector(value);
+    if (decoded.x < 0.0 || decoded.x > 1.0 || decoded.y < 0.0 || decoded.y > 1.0 ||
+        decoded.z < 0.0 || decoded.z > 1.0)
+        throw std::runtime_error("field color components must be within [0,1]");
+    return {static_cast<float>(decoded.x), static_cast<float>(decoded.y),
+            static_cast<float>(decoded.z)};
+}
 
 void writeEscaped(std::ostream& output, std::string_view value) {
     output << '"';
@@ -236,6 +244,9 @@ void writeEscaped(std::ostream& output, std::string_view value) {
 }
 void writeVector(std::ostream& output, const math::Vec3d& value) {
     output << '[' << value.x << ',' << value.y << ',' << value.z << ']';
+}
+void writeColor(std::ostream& output, const std::array<float, 3>& value) {
+    output << '[' << value[0] << ',' << value[1] << ',' << value[2] << ']';
 }
 const char* boolText(bool value) { return value ? "true" : "false"; }
 
@@ -327,7 +338,15 @@ std::string serializeScene(const SceneDocument& document) {
             out << ',';
         writeVector(out, field.lines.custom_seeds_m[index]);
     }
-    out << "]}}}}\n";
+    out << "]},\"colors\":{\"electricVectors\":";
+    writeColor(out, field.colors.electric_vectors);
+    out << ",\"electricLines\":";
+    writeColor(out, field.colors.electric_lines);
+    out << ",\"magneticVectors\":";
+    writeColor(out, field.colors.magnetic_vectors);
+    out << ",\"magneticLines\":";
+    writeColor(out, field.colors.magnetic_lines);
+    out << "}}}}\n";
     return out.str();
 }
 
@@ -413,6 +432,14 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         field.lines.trace_backward = boolean(lines, "backward");
         for (const auto& seed : array(member(lines, "customSeeds")))
             field.lines.custom_seeds_m.push_back(vector(seed));
+        if (const auto colors_member = field_json.find("colors");
+            colors_member != field_json.end()) {
+            const auto& colors = object(colors_member->second);
+            field.colors.electric_vectors = color(member(colors, "electricVectors"));
+            field.colors.electric_lines = color(member(colors, "electricLines"));
+            field.colors.magnetic_vectors = color(member(colors, "magneticVectors"));
+            field.colors.magnetic_lines = color(member(colors, "magneticLines"));
+        }
         const auto em_status =
             physics::em::validateElectromagneticSettings(document.runtime.electromagnetism);
         if (!em_status)

@@ -14,6 +14,7 @@ add_executable(aetherion_tests
   unit/input_routing_tests.cpp
   regression/integrator_comparison_tests.cpp
   unit/camera_tests.cpp
+  unit/body_defaults_tests.cpp
   unit/adaptive_grid_tests.cpp
   unit/command_queue_tests.cpp
   integration/controller_workflow_tests.cpp
@@ -23,6 +24,7 @@ add_executable(aetherion_tests
   unit/trail_history_tests.cpp
   unit/semi_implicit_euler_tests.cpp
   regression/earth_orbit_tests.cpp
+  regression/gravity_presets_tests.cpp
   regression/electrostatic_presets_tests.cpp
   regression/magnetic_presets_tests.cpp
   regression/boris_gyro_tests.cpp

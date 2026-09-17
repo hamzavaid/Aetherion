@@ -32,6 +32,10 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     field.vectors.resolution = 7;
     field.lines.step_size_m = 0.03;
     field.lines.custom_seeds_m = {{0.1, 0.2, 0.3}, {-0.1, 0.0, 0.2}};
+    field.colors.electric_vectors = {0.1F, 0.2F, 0.3F};
+    field.colors.electric_lines = {0.4F, 0.5F, 0.6F};
+    field.colors.magnetic_vectors = {0.7F, 0.8F, 0.9F};
+    field.colors.magnetic_lines = {0.15F, 0.25F, 0.35F};
 
     const auto encoded = aetherion::serialization::serializeScene(original);
     const auto decoded = aetherion::serialization::deserializeScene(encoded);
@@ -61,6 +65,14 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
               aetherion::renderer::ObservedField::magnetic);
     EXPECT_TRUE(decoded.value().visualization.field_visualization.planar_2d);
     EXPECT_EQ(decoded.value().visualization.field_visualization.lines.custom_seeds_m.size(), 2U);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.electric_vectors,
+              field.colors.electric_vectors);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.electric_lines,
+              field.colors.electric_lines);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.magnetic_vectors,
+              field.colors.magnetic_vectors);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.magnetic_lines,
+              field.colors.magnetic_lines);
 }
 
 TEST(SceneSerialization, RejectsUnknownSchemaAndNonFiniteJsonNumber) {

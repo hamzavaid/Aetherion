@@ -1,5 +1,7 @@
 #include "aetherion/renderer/field_visualization.hpp"
 
+#include <algorithm>
+
 #include <gtest/gtest.h>
 
 #include "aetherion/physics/em/electrostatics.hpp"
@@ -137,4 +139,21 @@ TEST(FieldVisualization, PlanarElectricSeedsUseSelectedSlice) {
     for (const auto& seed : seeds)
         EXPECT_DOUBLE_EQ(seed.y, settings.region.center_m.y);
     EXPECT_NE(seeds[0].z, seeds[1].z);
+}
+
+TEST(FieldVisualization, ThreeDimensionalElectricSeedsSpanAllAxes) {
+    core::Scene scene;
+    ASSERT_TRUE(
+        scene.createBody({.name = "charge", .mass_kg = 1.0, .charge_C = 1.0, .radius_m = 0.1}));
+    renderer::FieldVisualizationSettings settings;
+    settings.planar_2d = false;
+    settings.lines.automatic_seed_count = 32;
+    const auto seeds = renderer::generateAutomaticFieldSeeds(scene, settings);
+    ASSERT_EQ(seeds.size(), 32U);
+    const auto y_range = std::minmax_element(
+        seeds.begin(), seeds.end(), [](const auto& lhs, const auto& rhs) { return lhs.y < rhs.y; });
+    const auto z_range = std::minmax_element(
+        seeds.begin(), seeds.end(), [](const auto& lhs, const auto& rhs) { return lhs.z < rhs.z; });
+    EXPECT_GT(y_range.second->y - y_range.first->y, 0.1);
+    EXPECT_GT(z_range.second->z - z_range.first->z, 0.1);
 }

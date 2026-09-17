@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -41,6 +42,13 @@ struct FieldLineSettings {
     bool trace_backward{true};
 };
 
+struct FieldColorSettings {
+    std::array<float, 3> electric_vectors{1.0F, 0.38F, 0.08F};
+    std::array<float, 3> electric_lines{1.0F, 0.62F, 0.12F};
+    std::array<float, 3> magnetic_vectors{0.72F, 0.28F, 1.0F};
+    std::array<float, 3> magnetic_lines{0.45F, 0.72F, 1.0F};
+};
+
 struct FieldVisualizationSettings {
     FieldDisplayMode mode{FieldDisplayMode::none};
     ObservedField field{ObservedField::electric};
@@ -49,6 +57,7 @@ struct FieldVisualizationSettings {
     FieldRegion region;
     VectorFieldSettings vectors;
     FieldLineSettings lines;
+    FieldColorSettings colors;
 };
 
 struct FieldVectorGlyph {

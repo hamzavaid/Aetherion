@@ -37,6 +37,7 @@ class EngineeringUi final {
                        const renderer::RenderSettings& render_settings);
     void drawSimulationControls(core::SimulationController& controller, renderer::Camera& camera,
                                 renderer::RenderSettings& render_settings);
+    void drawSaveHistory(core::SimulationController& controller);
     void drawDiagnostics(const core::SimulationController& controller);
     void drawPlots(const core::SimulationController& controller);
     void shutdown() noexcept;

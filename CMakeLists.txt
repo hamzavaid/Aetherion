@@ -23,6 +23,7 @@ endif()
 add_library(aetherion_core
   src/core/log.cpp
   src/core/command_queue.cpp
+  src/core/body_defaults.cpp
   src/core/scene.cpp
   src/core/simulation.cpp
   src/core/simulation_clock.cpp

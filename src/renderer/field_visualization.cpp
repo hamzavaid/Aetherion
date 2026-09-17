@@ -250,11 +250,22 @@ std::vector<math::Vec3d> generateAutomaticFieldSeeds(const core::Scene& scene,
             const double phase =
                 2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(desired);
             const double radius = std::max(body.radius_m * 1.2, settings.lines.step_size_m * 2.0);
-            math::Vec3d offset{radius * std::cos(phase), radius * std::sin(phase), 0.0};
-            if (settings.planar_2d && effectiveGeometry(settings) == SamplingGeometry::plane_xz)
-                offset = {radius * std::cos(phase), 0.0, radius * std::sin(phase)};
-            if (settings.planar_2d && effectiveGeometry(settings) == SamplingGeometry::plane_yz)
-                offset = {0.0, radius * std::cos(phase), radius * std::sin(phase)};
+            math::Vec3d offset;
+            if (!settings.planar_2d) {
+                constexpr double golden_angle = 2.39996322972865332;
+                const double vertical =
+                    1.0 - 2.0 * (static_cast<double>(index) + 0.5) / static_cast<double>(desired);
+                const double radial = std::sqrt(std::max(0.0, 1.0 - vertical * vertical));
+                const double azimuth = golden_angle * static_cast<double>(index);
+                offset = radius * math::Vec3d{radial * std::cos(azimuth), vertical,
+                                              radial * std::sin(azimuth)};
+            } else {
+                offset = {radius * std::cos(phase), radius * std::sin(phase), 0.0};
+                if (effectiveGeometry(settings) == SamplingGeometry::plane_xz)
+                    offset = {radius * std::cos(phase), 0.0, radius * std::sin(phase)};
+                if (effectiveGeometry(settings) == SamplingGeometry::plane_yz)
+                    offset = {0.0, radius * std::cos(phase), radius * std::sin(phase)};
+            }
             seeds.push_back(flattenToPlane(body.state.position_m + offset, settings));
         }
         return seeds;

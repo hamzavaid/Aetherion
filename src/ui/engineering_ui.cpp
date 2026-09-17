@@ -15,6 +15,7 @@
 #include <utility>
 #include <vector>
 
+#include "aetherion/core/body_defaults.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
 #include "aetherion/physics/em/lorentz.hpp"
 #include "aetherion/physics/stability_analyzer.hpp"
@@ -95,6 +96,7 @@ void EngineeringUi::drawDockSpace() {
         ImGui::DockBuilderDockWindow("Scene Hierarchy", left);
         ImGui::DockBuilderDockWindow("Inspector", right);
         ImGui::DockBuilderDockWindow("Simulation Controls", bottom);
+        ImGui::DockBuilderDockWindow("Save History", bottom);
         ImGui::DockBuilderDockWindow("Diagnostics", bottom);
         ImGui::DockBuilderDockWindow("Plots", bottom);
         ImGui::DockBuilderFinish(dock_id);
@@ -109,12 +111,15 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller) {
         if (ImGui::Selectable(body.name.c_str(), selected))
             selected_ = body.id;
     }
-    if (ImGui::Button("Add Body")) {
+    const bool creates_charge = controller.settings().electromagnetism.electrostatics_enabled ||
+                                controller.settings().electromagnetism.magnetic_enabled;
+    if (ImGui::Button(creates_charge ? "Add Charged Body" : "Add Body")) {
         controller.commands().enqueue(core::CreateBodyCommand{
-            .body = core::Body{.name = "Body " + std::to_string(new_body_counter_++),
-                               .mass_kg = 1.0,
-                               .radius_m = 1.0}});
+            .body = core::makeInteractiveBody(controller.scene(), controller.settings(),
+                                              "Body " + std::to_string(new_body_counter_++))});
     }
+    if (creates_charge && ImGui::IsItemHovered())
+        ImGui::SetTooltip("Creates a charged, non-overlapping test body for the active EM scene.");
     if (selected_) {
         ImGui::SameLine();
         if (ImGui::Button("Duplicate")) {
@@ -233,29 +238,6 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Restore the most recent save, or the startup preset if none exists.");
 
-    ImGui::SeparatorText("Save History (current session)");
-    const auto& checkpoints = controller.checkpoints();
-    if (checkpoints.empty()) {
-        ImGui::TextDisabled("No saves yet.");
-    } else {
-        if (ImGui::BeginChild("SaveHistory", {0.0F, 105.0F}, ImGuiChildFlags_Borders)) {
-            for (auto checkpoint = checkpoints.rbegin(); checkpoint != checkpoints.rend();
-                 ++checkpoint) {
-                ImGui::PushID(static_cast<int>(checkpoint->id));
-                if (ImGui::SmallButton("Restore")) {
-                    static_cast<void>(controller.restoreCheckpoint(checkpoint->id));
-                    if (selected_ && controller.scene().find(*selected_) == nullptr)
-                        selected_.reset();
-                }
-                ImGui::SameLine();
-                ImGui::Text("Save %llu | t=%.9g s | %zu bodies",
-                            static_cast<unsigned long long>(checkpoint->id),
-                            checkpoint->simulation_time_s, checkpoint->scene.size());
-                ImGui::PopID();
-            }
-        }
-        ImGui::EndChild();
-    }
     if (ImGui::Button("Save Scene JSON")) {
         const serialization::SceneDocument document{controller.scene(), controller.settings(),
                                                     render_settings};
@@ -522,6 +504,33 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         if (seed_to_remove >= 0)
             field.lines.custom_seeds_m.erase(field.lines.custom_seeds_m.begin() + seed_to_remove);
     }
+    ImGui::SeparatorText("Field Colors");
+    ImGui::ColorEdit3("Electric vectors", field.colors.electric_vectors.data());
+    ImGui::ColorEdit3("Electric field lines", field.colors.electric_lines.data());
+    ImGui::ColorEdit3("Magnetic vectors", field.colors.magnetic_vectors.data());
+    ImGui::ColorEdit3("Magnetic field lines", field.colors.magnetic_lines.data());
+    ImGui::SeparatorText("Gravity Presets");
+    const auto load_gravity_preset = [&](presets::GravityPreset preset) {
+        if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
+            render_settings.meters_to_render_units = preset.meters_to_render_units;
+            render_settings.minimum_apparent_radius = preset.minimum_apparent_radius;
+            render_settings.body_radius_scale = preset.body_radius_scale;
+            render_settings.field_visualization.mode = renderer::FieldDisplayMode::none;
+            render_settings.field_visualization.planar_2d = false;
+            const auto bounds =
+                renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
+            camera.focus(bounds.center_world_m, bounds.radius_m);
+            selected_.reset();
+        }
+    };
+    if (ImGui::Button("Earth-Sun"))
+        load_gravity_preset(presets::makeEarthSunGravityPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Earth-Moon"))
+        load_gravity_preset(presets::makeEarthMoonGravityPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Sun-Earth-Moon"))
+        load_gravity_preset(presets::makeSunEarthMoonGravityPreset());
     ImGui::SeparatorText("Electrostatic Presets");
     const auto load_preset = [&](presets::ElectromagneticPreset preset) {
         if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
@@ -564,6 +573,30 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     if (ImGui::Button("Magnetic field lines"))
         load_preset(presets::makeMagneticFieldLinesPreset());
     camera.setTwoDimensional(render_settings.field_visualization.planar_2d);
+    ImGui::End();
+}
+
+void EngineeringUi::drawSaveHistory(core::SimulationController& controller) {
+    ImGui::Begin("Save History");
+    const auto& checkpoints = controller.checkpoints();
+    if (checkpoints.empty()) {
+        ImGui::TextDisabled("No saves in this session. Use Save in Simulation Controls.");
+    } else {
+        for (auto checkpoint = checkpoints.rbegin(); checkpoint != checkpoints.rend();
+             ++checkpoint) {
+            ImGui::PushID(static_cast<int>(checkpoint->id));
+            if (ImGui::SmallButton("Restore")) {
+                static_cast<void>(controller.restoreCheckpoint(checkpoint->id));
+                if (selected_ && controller.scene().find(*selected_) == nullptr)
+                    selected_.reset();
+            }
+            ImGui::SameLine();
+            ImGui::Text("Save %llu | t=%.9g s | %zu bodies",
+                        static_cast<unsigned long long>(checkpoint->id),
+                        checkpoint->simulation_time_s, checkpoint->scene.size());
+            ImGui::PopID();
+        }
+    }
     ImGui::End();
 }
 
@@ -692,6 +725,7 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     drawHierarchy(controller);
     drawInspector(controller, camera, render_settings);
     drawSimulationControls(controller, camera, render_settings);
+    drawSaveHistory(controller);
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;

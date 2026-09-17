@@ -575,10 +575,16 @@ class OpenGlRenderer::Impl final {
                            matrix.data());
         glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
         glBindVertexArray(trail_vao_);
-        const std::array<float, 3> color =
-            settings.field_visualization.field == ObservedField::electric
-                ? std::array{1.0F, 0.38F, 0.08F}
-                : std::array{0.72F, 0.28F, 1.0F};
+        const auto& colors = settings.field_visualization.colors;
+        const std::array<float, 3> color = [&]() {
+            if (settings.field_visualization.field == ObservedField::electric)
+                return settings.field_visualization.mode == FieldDisplayMode::observed_vectors
+                           ? colors.electric_vectors
+                           : colors.electric_lines;
+            return settings.field_visualization.mode == FieldDisplayMode::observed_vectors
+                       ? colors.magnetic_vectors
+                       : colors.magnetic_lines;
+        }();
         if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
             std::vector<GridVertexGpu> vertices;
             vertices.reserve(field_glyphs_.size() * 6U);
