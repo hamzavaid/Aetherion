@@ -132,6 +132,8 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller) {
         }
         ImGui::SameLine();
         if (ImGui::Button("Delete")) {
+            if (camera_tracker_.followedEntity() == selected_)
+                camera_tracker_.stop();
             controller.commands().enqueue(core::DeleteBodyCommand{*selected_});
             selected_.reset();
         }
@@ -149,6 +151,8 @@ void EngineeringUi::drawInspector(core::SimulationController& controller, render
     }
     const auto* body = controller.scene().find(*selected_);
     if (body == nullptr) {
+        if (camera_tracker_.followedEntity() == selected_)
+            camera_tracker_.stop();
         selected_.reset();
         ImGui::End();
         return;
@@ -210,9 +214,35 @@ void EngineeringUi::drawInspector(core::SimulationController& controller, render
         controller.commands().enqueue(
             core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
     }
-    if (ImGui::Button("Focus Camera"))
+    if (ImGui::Button("Focus Camera")) {
+        if (camera_tracker_.followedEntity() && camera_tracker_.followedEntity() != selected_)
+            camera_tracker_.stop();
         camera.focus(body->state.position_m,
                      renderer::visualBodyRadiusMeters(*body, render_settings));
+    }
+    const auto followed_entity = camera_tracker_.followedEntity();
+    bool follow_camera = followed_entity.has_value();
+    if (ImGui::Checkbox("Follow Camera", &follow_camera)) {
+        if (follow_camera) {
+            camera_tracker_.follow(body->id);
+            camera.focus(body->state.position_m,
+                         renderer::visualBodyRadiusMeters(*body, render_settings));
+        } else {
+            camera_tracker_.stop();
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Keep this body at the camera target while preserving orbit and zoom.");
+    const auto active_followed_entity = camera_tracker_.followedEntity();
+    if (active_followed_entity && active_followed_entity != selected_) {
+        ImGui::SameLine();
+        if (ImGui::Button("Follow Selected Instead")) {
+            camera_tracker_.follow(body->id);
+            camera.focus(body->state.position_m,
+                         renderer::visualBodyRadiusMeters(*body, render_settings));
+        }
+        ImGui::TextDisabled("Camera is currently following another body.");
+    }
     ImGui::End();
 }
 
@@ -264,6 +294,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                         : (field.region.center_m - bounds.center_world_m).norm() +
                               field.region.half_extent_m.norm();
                 camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
+                camera_tracker_.stop();
                 selected_.reset();
                 scene_file_status_ = "Loaded aetherion_scene.json";
             } else {
@@ -539,6 +570,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             gravity_field.lines.maximum_length_m = field_radius_m * 3.0;
             gravity_field.lines.minimum_field_magnitude = 0.0;
             camera.focus(bounds.center_world_m, bounds.radius_m);
+            camera_tracker_.stop();
             selected_.reset();
         }
     };
@@ -566,6 +598,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                     : (preset_field.region.center_m - bounds.center_world_m).norm() +
                           preset_field.region.half_extent_m.norm();
             camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
+            camera_tracker_.stop();
             selected_.reset();
         }
     };

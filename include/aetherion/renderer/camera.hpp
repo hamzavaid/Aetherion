@@ -14,6 +14,8 @@ class Camera final {
     void pan(double horizontal_m, double vertical_m) noexcept;
     void zoom(double logarithmic_delta) noexcept;
     void focus(const math::Vec3d& target_world_m, double bounding_radius_m);
+    /// Changes the orbit target in world meters without altering distance, angles, or view mode.
+    void setTargetWorld(const math::Vec3d& target_world_m);
     /// Enables a locked top-down orthographic engineering view of the world XZ plane.
     void setTwoDimensional(bool enabled) noexcept;
     void reset() noexcept;

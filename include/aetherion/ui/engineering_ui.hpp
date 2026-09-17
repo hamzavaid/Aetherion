@@ -7,6 +7,7 @@
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/renderer/camera.hpp"
+#include "aetherion/renderer/camera_tracking.hpp"
 #include "aetherion/renderer/input_routing.hpp"
 #include "aetherion/renderer/render_data.hpp"
 
@@ -28,6 +29,10 @@ class EngineeringUi final {
         return selected_;
     }
     void selectEntity(std::optional<core::EntityId> entity) noexcept { selected_ = entity; }
+    /// Advances a checked body-reference camera after simulation updates and before rendering.
+    void updateCameraTracking(const core::Scene& scene, renderer::Camera& camera) {
+        static_cast<void>(camera_tracker_.update(scene, camera));
+    }
     [[nodiscard]] renderer::InputCapture inputCapture() const noexcept { return input_capture_; }
 
   private:
@@ -43,6 +48,7 @@ class EngineeringUi final {
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
+    renderer::CameraTracker camera_tracker_;
     bool initialized_{};
     bool dock_layout_initialized_{};
     std::size_t new_body_counter_{1};

@@ -1,4 +1,5 @@
 #include "aetherion/renderer/camera.hpp"
+#include "aetherion/renderer/camera_tracking.hpp"
 
 #include <gtest/gtest.h>
 
@@ -61,4 +62,62 @@ TEST(Camera, TwoDimensionalModeUsesLockedTopDownOrthographicProjection) {
     EXPECT_FLOAT_EQ(projection[15], 1.0F);
     camera.setTwoDimensional(false);
     EXPECT_FALSE(camera.isTwoDimensional());
+}
+
+TEST(Camera, UpdatingTargetPreservesZoomAndOrbitOffset) {
+    Camera camera;
+    camera.focus({10.0, 20.0, 30.0}, 4.0);
+    camera.orbit(0.4, -0.2);
+    camera.zoom(3.0);
+    const double distance = camera.distanceMeters();
+    const auto offset = camera.positionWorld() - camera.targetWorld();
+
+    camera.setTargetWorld({100.0, -50.0, 7.0});
+
+    EXPECT_EQ(camera.targetWorld(), (Vec3d{100.0, -50.0, 7.0}));
+    EXPECT_DOUBLE_EQ(camera.distanceMeters(), distance);
+    const auto tracked_offset = camera.positionWorld() - camera.targetWorld();
+    EXPECT_NEAR(tracked_offset.x, offset.x, 1.0e-12);
+    EXPECT_NEAR(tracked_offset.y, offset.y, 1.0e-12);
+    EXPECT_NEAR(tracked_offset.z, offset.z, 1.0e-12);
+}
+
+TEST(CameraTracker, FollowsEntityMotionWithoutChangingZoomAndCanDetach) {
+    aetherion::core::Scene scene;
+    const auto id = scene.createBody({.name = "tracked",
+                                      .mass_kg = 1.0,
+                                      .radius_m = 1.0,
+                                      .state = {.position_m = {1.0, 2.0, 3.0}}});
+    ASSERT_TRUE(id);
+    Camera camera;
+    camera.focus({}, 5.0);
+    camera.zoom(2.0);
+    const double distance = camera.distanceMeters();
+    aetherion::renderer::CameraTracker tracker;
+    tracker.follow(id.value());
+
+    EXPECT_TRUE(tracker.update(scene, camera));
+    EXPECT_EQ(camera.targetWorld(), (Vec3d{1.0, 2.0, 3.0}));
+    EXPECT_DOUBLE_EQ(camera.distanceMeters(), distance);
+    scene.bodies().front().state.position_m = {9.0, 8.0, 7.0};
+    EXPECT_TRUE(tracker.update(scene, camera));
+    EXPECT_EQ(camera.targetWorld(), (Vec3d{9.0, 8.0, 7.0}));
+    EXPECT_DOUBLE_EQ(camera.distanceMeters(), distance);
+
+    tracker.stop();
+    scene.bodies().front().state.position_m = {20.0, 0.0, 0.0};
+    EXPECT_FALSE(tracker.update(scene, camera));
+    EXPECT_EQ(camera.targetWorld(), (Vec3d{9.0, 8.0, 7.0}));
+}
+
+TEST(CameraTracker, ClearsReferenceWhenTrackedEntityIsRemoved) {
+    aetherion::core::Scene scene;
+    const auto id = scene.createBody({.name = "tracked", .mass_kg = 1.0, .radius_m = 1.0});
+    ASSERT_TRUE(id);
+    Camera camera;
+    aetherion::renderer::CameraTracker tracker;
+    tracker.follow(id.value());
+    ASSERT_TRUE(scene.remove(id.value()));
+    EXPECT_FALSE(tracker.update(scene, camera));
+    EXPECT_FALSE(tracker.followedEntity());
 }

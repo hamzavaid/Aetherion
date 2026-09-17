@@ -79,6 +79,12 @@ void Camera::focus(const math::Vec3d& target_world_m, double bounding_radius_m) 
     distance_m_ = std::max(2.5 * bounding_radius_m, 1.0e-6);
 }
 
+void Camera::setTargetWorld(const math::Vec3d& target_world_m) {
+    if (!target_world_m.isFinite())
+        throw std::invalid_argument("camera target must be finite in world meters");
+    target_world_m_ = target_world_m;
+}
+
 void Camera::reset() noexcept {
     target_world_m_ = {};
     distance_m_ = 10.0;

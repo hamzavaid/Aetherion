@@ -48,6 +48,7 @@ aetherion_set_project_warnings(aetherion_core)
 add_library(aetherion_renderer
   src/renderer/adaptive_grid.cpp
   src/renderer/camera.cpp
+  src/renderer/camera_tracking.cpp
   src/renderer/field_visualization.cpp
   src/renderer/mesh.cpp
   src/renderer/picking.cpp

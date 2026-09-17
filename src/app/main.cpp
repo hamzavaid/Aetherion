@@ -48,6 +48,7 @@ int main() {
                                            simulation_status.error().message);
             controller.setPlaying(false);
         }
+        ui.updateCameraTracking(controller.scene(), camera);
         render_settings.simulation_time_s = controller.simulationTimeSeconds();
         render_settings.selected_entity = ui.selectedEntity();
         const auto render_status = renderer.render(controller.scene(), camera, render_settings,
