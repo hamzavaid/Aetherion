@@ -2,7 +2,8 @@
 
 Aetherion is an interactive, deterministic 3D mechanics simulator built around a testable
 double-precision physics core. The current release supports Newtonian gravity, multiple numerical
-integrators, engineering diagnostics, and an optional OpenGL desktop interface.
+integrators, Coulomb electrostatics, electric-field sampling and tracing, engineering diagnostics,
+versioned JSON scenes, and an optional OpenGL desktop interface.
 
 ## Build
 
@@ -52,6 +53,12 @@ Selecting a body in the hierarchy or directly in the scene highlights it in gold
 the inspector. Object trails can be enabled under Simulation Controls, with a logarithmic duration
 slider measured in simulation seconds. Trail history is bounded and automatically clears when
 simulation time is reset.
+
+Electrostatic presets, charge editing, interaction controls, observed electric-vector lattices, and
+RK4-traced electric field lines are available from Simulation Controls. Field sampling and tracing
+operate through a physics-provider interface; visualization never reimplements the Coulomb law.
+Scene JSON saves preserve SI body state, electromagnetic settings, visualization regions, vector
+scaling, trace limits, and custom field-line seeds.
 
 Semi-Implicit Euler, Velocity Verlet, and classical RK4 are selectable at runtime. The diagnostics
 and plots report mechanical energy and momentum errors relative to the initial sample, while the

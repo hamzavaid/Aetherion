@@ -15,11 +15,16 @@ GravitySolver::GravitySolver(GravityConfig config) : config_(config) {
 }
 
 core::Status GravitySolver::computeAccelerations(core::Scene& scene) {
-    diagnostics_ = {};
     auto& bodies = scene.bodies();
     for (auto& body : bodies) {
         body.state.acceleration_mps2 = {};
     }
+    return accumulateAccelerations(scene);
+}
+
+core::Status GravitySolver::accumulateAccelerations(core::Scene& scene) {
+    diagnostics_ = {};
+    auto& bodies = scene.bodies();
 
     const double softening_squared = config_.softening_m * config_.softening_m;
     const double minimum_squared = config_.minimum_separation_m * config_.minimum_separation_m;

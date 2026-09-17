@@ -37,6 +37,19 @@ Result<EntityId> Scene::createBody(Body body) {
     return id;
 }
 
+Result<EntityId> Scene::importBody(Body body) {
+    const auto validation = validate(body);
+    if (!validation)
+        return validation.error();
+    if (body.id == 0U || find(body.id) != nullptr) {
+        return Error{ErrorCode::invalid_argument, "imported body ID must be non-zero and unique"};
+    }
+    const EntityId id = body.id;
+    next_id_ = std::max(next_id_, id + 1U);
+    bodies_.push_back(std::move(body));
+    return id;
+}
+
 bool Scene::remove(EntityId id) noexcept {
     const auto position = std::find_if(bodies_.begin(), bodies_.end(),
                                        [id](const Body& body) { return body.id == id; });

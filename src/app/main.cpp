@@ -50,7 +50,8 @@ int main() {
         }
         render_settings.simulation_time_s = controller.simulationTimeSeconds();
         render_settings.selected_entity = ui.selectedEntity();
-        const auto render_status = renderer.render(controller.scene(), camera, render_settings);
+        const auto render_status = renderer.render(controller.scene(), camera, render_settings,
+                                                   &controller.fieldProvider());
         if (!render_status) {
             aetherion::core::Logger::write(aetherion::core::LogLevel::error,
                                            render_status.error().message);

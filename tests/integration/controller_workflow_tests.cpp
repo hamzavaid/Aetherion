@@ -111,3 +111,25 @@ TEST(ControllerWorkflow, SaveHistoryRetainsLatestSixtyFourCheckpoints) {
     EXPECT_EQ(controller.checkpoints().back().id, 66U);
     EXPECT_FALSE(controller.restoreCheckpoint(1U));
 }
+
+TEST(ControllerWorkflow, QueuedElectrostaticsAffectsSubsequentPhysicsStep) {
+    Scene scene;
+    ASSERT_TRUE(scene.createBody(Body{.name = "left",
+                                      .mass_kg = 1.0,
+                                      .charge_C = 1.0e-6,
+                                      .radius_m = 0.1,
+                                      .state = {.position_m = {-1.0, 0.0, 0.0}}}));
+    ASSERT_TRUE(scene.createBody(Body{.name = "right",
+                                      .mass_kg = 1.0,
+                                      .charge_C = 1.0e-6,
+                                      .radius_m = 0.1,
+                                      .state = {.position_m = {1.0, 0.0, 0.0}}}));
+    SimulationController controller(std::move(scene), {.physics_dt_s = 1.0e-3});
+    auto electromagnetic = controller.settings().electromagnetism;
+    electromagnetic.electrostatics_enabled = true;
+    controller.commands().enqueue(
+        aetherion::core::SetElectromagneticSettingsCommand{electromagnetic});
+    ASSERT_TRUE(controller.singleStep());
+    EXPECT_LT(controller.scene().bodies()[0].state.velocity_mps.x, 0.0);
+    EXPECT_GT(controller.scene().bodies()[1].state.velocity_mps.x, 0.0);
+}

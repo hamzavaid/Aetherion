@@ -6,6 +6,7 @@
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/scene.hpp"
+#include "aetherion/physics/fields/field_provider.hpp"
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/input_routing.hpp"
 #include "aetherion/renderer/render_data.hpp"
@@ -31,7 +32,8 @@ class OpenGlRenderer final {
     [[nodiscard]] core::Status initialize(int width, int height, std::string_view title,
                                           bool visible = true);
     [[nodiscard]] core::Status render(const core::Scene& scene, Camera& camera,
-                                      const RenderSettings& settings);
+                                      const RenderSettings& settings,
+                                      const physics::fields::IFieldProvider* fields = nullptr);
     void present();
     void pollEvents();
     /// Sets UI ownership before event polling; captured input cannot manipulate the scene camera.

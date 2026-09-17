@@ -191,7 +191,8 @@ class OpenGlRenderer::Impl final {
         return core::success();
     }
 
-    core::Status render(const core::Scene& scene, Camera& camera, const RenderSettings& settings) {
+    core::Status render(const core::Scene& scene, Camera& camera, const RenderSettings& settings,
+                        const physics::fields::IFieldProvider* fields) {
         if (window_ == nullptr) {
             return core::Error{core::ErrorCode::platform_failure, "renderer is not initialized"};
         }
@@ -238,6 +239,8 @@ class OpenGlRenderer::Impl final {
         }
 
         drawTrails(scene, camera, settings, matrix);
+        updateFieldVisualization(scene, settings, fields);
+        drawFieldVisualization(camera, settings, matrix);
 
         if (!gpu_instances.empty()) {
             glUseProgram(sphere_program_);
@@ -525,6 +528,93 @@ class OpenGlRenderer::Impl final {
         glBindVertexArray(0);
     }
 
+    void updateFieldVisualization(const core::Scene& scene, const RenderSettings& settings,
+                                  const physics::fields::IFieldProvider* fields) {
+        if (fields == nullptr || settings.field_visualization.mode == FieldDisplayMode::none) {
+            field_glyphs_.clear();
+            field_lines_.clear();
+            field_cache_valid_ = false;
+            return;
+        }
+        const std::uint64_t revision =
+            fields->revision() ^ fieldVisualizationRevision(settings.field_visualization);
+        if (field_cache_valid_ && revision == field_cache_revision_)
+            return;
+        field_cache_valid_ = true;
+        field_cache_revision_ = revision;
+        field_glyphs_.clear();
+        field_lines_.clear();
+        if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
+            field_glyphs_ = sampleObservedField(*fields, settings.field_visualization,
+                                                settings.simulation_time_s);
+            return;
+        }
+        auto seeds = settings.field_visualization.lines.custom_seeds_m;
+        auto automatic = generateAutomaticFieldSeeds(scene, settings.field_visualization);
+        seeds.insert(seeds.end(), automatic.begin(), automatic.end());
+        field_lines_ = traceFieldLines(*fields, settings.field_visualization, seeds,
+                                       settings.simulation_time_s);
+    }
+
+    void uploadAndDrawLineVertices(const std::vector<GridVertexGpu>& vertices, GLenum primitive) {
+        if (vertices.size() < 2U)
+            return;
+        glBindBuffer(GL_ARRAY_BUFFER, trail_vbo_);
+        glBufferData(GL_ARRAY_BUFFER,
+                     static_cast<GLsizeiptr>(vertices.size() * sizeof(GridVertexGpu)),
+                     vertices.data(), GL_STREAM_DRAW);
+        glDrawArrays(primitive, 0, static_cast<GLsizei>(vertices.size()));
+    }
+
+    void drawFieldVisualization(const Camera& camera, const RenderSettings& settings,
+                                const Mat4f& matrix) {
+        if (settings.field_visualization.mode == FieldDisplayMode::none)
+            return;
+        glUseProgram(grid_program_);
+        glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
+                           matrix.data());
+        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
+        glBindVertexArray(trail_vao_);
+        const std::array<float, 3> color =
+            settings.field_visualization.field == ObservedField::electric
+                ? std::array{1.0F, 0.38F, 0.08F}
+                : std::array{0.72F, 0.28F, 1.0F};
+        if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
+            std::vector<GridVertexGpu> vertices;
+            vertices.reserve(field_glyphs_.size() * 6U);
+            for (const auto& glyph : field_glyphs_) {
+                const auto end = glyph.position_m + glyph.direction * glyph.visual_length_m;
+                auto side = math::cross(glyph.direction, {0.0, 1.0, 0.0});
+                if (side.squaredNorm() < 1.0e-12)
+                    side = math::cross(glyph.direction, {1.0, 0.0, 0.0});
+                side = side.normalized();
+                const auto wing_base = end - glyph.direction * (0.25 * glyph.visual_length_m);
+                const auto wing_offset = side * (0.12 * glyph.visual_length_m);
+                const std::array<math::Vec3d, 6> points = {
+                    glyph.position_m,        end, end,
+                    wing_base + wing_offset, end, wing_base - wing_offset};
+                for (const auto& point : points) {
+                    const auto relative = toCameraRelative(point, camera.positionWorld(),
+                                                           settings.meters_to_render_units);
+                    vertices.push_back({{relative.x, relative.y, relative.z}, color});
+                }
+            }
+            uploadAndDrawLineVertices(vertices, GL_LINES);
+        } else {
+            for (const auto& line : field_lines_) {
+                std::vector<GridVertexGpu> vertices;
+                vertices.reserve(line.points_m.size());
+                for (const auto& point : line.points_m) {
+                    const auto relative = toCameraRelative(point, camera.positionWorld(),
+                                                           settings.meters_to_render_units);
+                    vertices.push_back({{relative.x, relative.y, relative.z}, color});
+                }
+                uploadAndDrawLineVertices(vertices, GL_LINE_STRIP);
+            }
+        }
+        glBindVertexArray(0);
+    }
+
     void shutdown() noexcept {
         if (window_ != nullptr) {
             glfwMakeContextCurrent(window_);
@@ -575,6 +665,10 @@ class OpenGlRenderer::Impl final {
     GLsizei grid_vertex_count_{};
     Vec3f grid_origin_{};
     TrailHistory trail_history_;
+    std::vector<FieldVectorGlyph> field_glyphs_;
+    std::vector<TracedFieldLine> field_lines_;
+    std::uint64_t field_cache_revision_{};
+    bool field_cache_valid_{};
 };
 
 OpenGlRenderer::OpenGlRenderer() : impl_(std::make_unique<Impl>()) {}
@@ -588,8 +682,9 @@ core::Status OpenGlRenderer::initialize(int width, int height, std::string_view 
 }
 
 core::Status OpenGlRenderer::render(const core::Scene& scene, Camera& camera,
-                                    const RenderSettings& settings) {
-    return impl_->render(scene, camera, settings);
+                                    const RenderSettings& settings,
+                                    const physics::fields::IFieldProvider* fields) {
+    return impl_->render(scene, camera, settings, fields);
 }
 
 void OpenGlRenderer::present() { impl_->present(); }

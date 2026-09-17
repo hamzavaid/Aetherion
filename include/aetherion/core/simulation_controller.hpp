@@ -30,6 +30,8 @@ class SimulationController final {
     [[nodiscard]] CheckpointId saveCheckpoint();
     /// Restores a historical checkpoint and pauses execution.
     [[nodiscard]] Status restoreCheckpoint(CheckpointId id);
+    /// Replaces the active/startup scene for an explicit preset or serialized-scene load.
+    [[nodiscard]] Status loadState(Scene scene, RuntimeSettings settings);
     void reset();
     void setPlaying(bool playing) noexcept { playing_ = playing; }
 
@@ -47,6 +49,9 @@ class SimulationController final {
     }
     [[nodiscard]] const TelemetryRecorder& telemetry() const noexcept {
         return simulation_.telemetry();
+    }
+    [[nodiscard]] const physics::fields::IFieldProvider& fieldProvider() const noexcept {
+        return simulation_.fieldProvider();
     }
 
   private:

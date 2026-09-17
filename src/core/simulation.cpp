@@ -7,7 +7,9 @@
 
 namespace aetherion::core {
 
-Simulation::Simulation(Scene& scene, SimulationConfig config) : scene_(scene), config_(config) {
+Simulation::Simulation(Scene& scene, SimulationConfig config)
+    : scene_(scene), config_(config), electrostatics_(electromagnetic_settings_),
+      field_provider_(scene_, electromagnetic_settings_) {
     if (!std::isfinite(config.physics_dt_s) || config.physics_dt_s <= 0.0) {
         throw std::invalid_argument("simulation timestep must be finite and positive in s");
     }
@@ -16,10 +18,18 @@ Simulation::Simulation(Scene& scene, SimulationConfig config) : scene_(scene), c
 
 Status Simulation::step() {
     const physics::AccelerationFunction evaluate = [this](Scene& evaluated_scene) {
-        if (gravity_enabled_)
-            return gravity_.computeAccelerations(evaluated_scene);
         for (auto& body : evaluated_scene.bodies())
             body.state.acceleration_mps2 = {};
+        if (gravity_enabled_) {
+            const auto status = gravity_.accumulateAccelerations(evaluated_scene);
+            if (!status)
+                return status;
+        }
+        if (electromagnetic_settings_.electrostatics_enabled) {
+            const auto status = electrostatics_.accumulateAccelerations(evaluated_scene);
+            if (!status)
+                return status;
+        }
         return success();
     };
     Status status = success();
@@ -43,6 +53,14 @@ Status Simulation::step() {
     time_s_ += config_.physics_dt_s;
     static_cast<void>(telemetry_.sample(scene_, time_s_));
     return success();
+}
+
+void Simulation::setElectromagneticSettings(const physics::em::ElectromagneticSettings& settings) {
+    const auto status = physics::em::validateElectromagneticSettings(settings);
+    if (!status)
+        throw std::invalid_argument(status.error().message);
+    electromagnetic_settings_ = settings;
+    electrostatics_.setSettings(settings);
 }
 
 void Simulation::setPhysicsDt(double physics_dt_s) {

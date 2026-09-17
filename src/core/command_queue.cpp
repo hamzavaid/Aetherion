@@ -4,6 +4,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "aetherion/physics/em/electrostatics.hpp"
+
 namespace aetherion::core {
 namespace {
 
@@ -49,6 +51,8 @@ std::string description(const SimulationCommand& command) {
                 return "set time scale";
             if constexpr (std::is_same_v<T, SetGravityEnabledCommand>)
                 return "set gravity enabled";
+            if constexpr (std::is_same_v<T, SetElectromagneticSettingsCommand>)
+                return "set electromagnetic settings";
             return "set integrator";
         },
         command);
@@ -87,6 +91,12 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
                 return success();
             } else if constexpr (std::is_same_v<T, SetGravityEnabledCommand>) {
                 settings.gravity_enabled = typed.enabled;
+                return success();
+            } else if constexpr (std::is_same_v<T, SetElectromagneticSettingsCommand>) {
+                const auto status = physics::em::validateElectromagneticSettings(typed.settings);
+                if (!status)
+                    return status;
+                settings.electromagnetism = typed.settings;
                 return success();
             } else {
                 settings.integrator = typed.integrator;

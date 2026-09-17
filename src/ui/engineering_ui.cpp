@@ -11,10 +11,13 @@
 #include <cfloat>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "aetherion/physics/stability_analyzer.hpp"
+#include "aetherion/presets/em_presets.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
+#include "aetherion/serialization/scene_serialization.hpp"
 
 namespace aetherion::ui {
 
@@ -153,6 +156,11 @@ void EngineeringUi::drawInspector(core::SimulationController& controller,
         controller.commands().enqueue(
             core::UpdateBodyCommand{body->id, core::BodyPatch{.mass_kg = mass}});
     }
+    double charge = body->charge_C;
+    if (ImGui::InputDouble("Charge (C)", &charge, 0.0, 0.0, "%.9g")) {
+        controller.commands().enqueue(
+            core::UpdateBodyCommand{body->id, core::BodyPatch{.charge_C = charge}});
+    }
     double radius = body->radius_m;
     if (ImGui::InputDouble("Radius (m)", &radius, 0.0, 0.0, "%.9g")) {
         controller.commands().enqueue(
@@ -179,6 +187,12 @@ void EngineeringUi::drawInspector(core::SimulationController& controller,
     bool gravity = interactions.contains(core::Interaction::gravity);
     if (ImGui::Checkbox("Gravity interaction", &gravity)) {
         interactions.set(core::Interaction::gravity, gravity);
+        controller.commands().enqueue(
+            core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
+    }
+    bool electrostatic = interactions.contains(core::Interaction::electrostatic);
+    if (ImGui::Checkbox("Electrostatic interaction", &electrostatic)) {
+        interactions.set(core::Interaction::electrostatic, electrostatic);
         controller.commands().enqueue(
             core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
     }
@@ -231,6 +245,32 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         }
         ImGui::EndChild();
     }
+    if (ImGui::Button("Save Scene JSON")) {
+        const serialization::SceneDocument document{controller.scene(), controller.settings(),
+                                                    render_settings};
+        const auto status = serialization::saveSceneFile("aetherion_scene.json", document);
+        scene_file_status_ = status ? "Saved aetherion_scene.json" : status.error().message;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load Scene JSON")) {
+        const auto document = serialization::loadSceneFile("aetherion_scene.json");
+        if (!document) {
+            scene_file_status_ = document.error().message;
+        } else {
+            auto loaded = document.value();
+            const auto status =
+                controller.loadState(std::move(loaded.scene), std::move(loaded.runtime));
+            if (status) {
+                render_settings = std::move(loaded.visualization);
+                selected_.reset();
+                scene_file_status_ = "Loaded aetherion_scene.json";
+            } else {
+                scene_file_status_ = status.error().message;
+            }
+        }
+    }
+    if (!scene_file_status_.empty())
+        ImGui::TextWrapped("%s", scene_file_status_.c_str());
 
     double dt = controller.settings().physics_dt_s;
     if (ImGui::InputDouble("Physics dt (s)", &dt, 0.0, 0.0, "%.9g")) {
@@ -243,6 +283,17 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     bool gravity = controller.settings().gravity_enabled;
     if (ImGui::Checkbox("Global gravity", &gravity)) {
         controller.commands().enqueue(core::SetGravityEnabledCommand{gravity});
+    }
+    auto electromagnetic = controller.settings().electromagnetism;
+    bool electrostatics = electromagnetic.electrostatics_enabled;
+    if (ImGui::Checkbox("Electrostatics", &electrostatics)) {
+        electromagnetic.electrostatics_enabled = electrostatics;
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
+    }
+    double electric_guard_m = electromagnetic.minimum_separation_m;
+    if (ImGui::InputDouble("EM guard radius (m)", &electric_guard_m, 0.0, 0.0, "%.6g")) {
+        electromagnetic.minimum_separation_m = electric_guard_m;
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     }
     constexpr const char* integrator_names[] = {"Semi-Implicit Euler", "Velocity Verlet", "RK4"};
     int integrator = static_cast<int>(controller.settings().integrator);
@@ -270,6 +321,73 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                             &render_settings.trail_duration_s, &minimum_trail_s, &maximum_trail_s,
                             "%.4g s", ImGuiSliderFlags_Logarithmic);
     }
+    ImGui::SeparatorText("Electric / Magnetic Field Display");
+    auto& field = render_settings.field_visualization;
+    constexpr const char* field_modes[] = {"None", "Observed Vector Field", "Field Lines"};
+    int field_mode = static_cast<int>(field.mode);
+    if (ImGui::Combo("Display mode", &field_mode, field_modes, 3))
+        field.mode = static_cast<renderer::FieldDisplayMode>(field_mode);
+    constexpr const char* field_types[] = {"Electric (V/m)", "Magnetic (T)"};
+    int field_type = static_cast<int>(field.field);
+    if (ImGui::Combo("Observed field", &field_type, field_types, 2))
+        field.field = static_cast<renderer::ObservedField>(field_type);
+    std::array<double, 3> region_center = {field.region.center_m.x, field.region.center_m.y,
+                                           field.region.center_m.z};
+    if (ImGui::InputScalarN("Field center (m)", ImGuiDataType_Double, region_center.data(), 3))
+        field.region.center_m = {region_center[0], region_center[1], region_center[2]};
+    std::array<double, 3> region_extent = {
+        field.region.half_extent_m.x, field.region.half_extent_m.y, field.region.half_extent_m.z};
+    if (ImGui::InputScalarN("Field half extent (m)", ImGuiDataType_Double, region_extent.data(), 3))
+        field.region.half_extent_m = {region_extent[0], region_extent[1], region_extent[2]};
+    if (field.mode == renderer::FieldDisplayMode::observed_vectors) {
+        constexpr const char* geometries[] = {"3D volume", "XY plane", "XZ plane", "YZ plane"};
+        int geometry = static_cast<int>(field.vectors.geometry);
+        if (ImGui::Combo("Sampling region", &geometry, geometries, 4))
+            field.vectors.geometry = static_cast<renderer::SamplingGeometry>(geometry);
+        int resolution = static_cast<int>(field.vectors.resolution);
+        if (ImGui::SliderInt("Field resolution", &resolution, 2, 24))
+            field.vectors.resolution = static_cast<std::size_t>(resolution);
+        ImGui::InputDouble("Vector length (m)", &field.vectors.visual_length_m, 0.0, 0.0, "%.6g");
+        constexpr const char* scales[] = {"Normalized", "Logarithmic", "Linear"};
+        int scaling = static_cast<int>(field.vectors.scaling);
+        if (ImGui::Combo("Vector scaling", &scaling, scales, 3))
+            field.vectors.scaling = static_cast<renderer::VectorScaling>(scaling);
+        ImGui::InputDouble("Reference magnitude", &field.vectors.reference_magnitude, 0.0, 0.0,
+                           "%.6g");
+        ImGui::InputDouble("Minimum magnitude", &field.vectors.minimum_magnitude, 0.0, 0.0, "%.6g");
+        ImGui::InputDouble("Maximum magnitude", &field.vectors.maximum_magnitude, 0.0, 0.0, "%.6g");
+    }
+    if (field.mode == renderer::FieldDisplayMode::field_lines) {
+        int seeds = static_cast<int>(field.lines.automatic_seed_count);
+        if (ImGui::SliderInt("Automatic seeds", &seeds, 0, 128))
+            field.lines.automatic_seed_count = static_cast<std::size_t>(seeds);
+        ImGui::InputDouble("Trace step (m)", &field.lines.step_size_m, 0.0, 0.0, "%.6g");
+        int maximum_steps = static_cast<int>(field.lines.maximum_steps);
+        if (ImGui::SliderInt("Maximum trace steps", &maximum_steps, 1, 4000))
+            field.lines.maximum_steps = static_cast<std::size_t>(maximum_steps);
+        ImGui::InputDouble("Maximum line length (m)", &field.lines.maximum_length_m, 0.0, 0.0,
+                           "%.6g");
+        ImGui::InputDouble("Trace termination field", &field.lines.minimum_field_magnitude, 0.0,
+                           0.0, "%.6g");
+        ImGui::Checkbox("Trace forward", &field.lines.trace_forward);
+        ImGui::SameLine();
+        ImGui::Checkbox("Trace backward", &field.lines.trace_backward);
+    }
+    ImGui::SeparatorText("Electrostatic Presets");
+    const auto load_preset = [&](presets::ElectromagneticPreset preset) {
+        if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
+            render_settings.field_visualization = std::move(preset.visualization);
+            selected_.reset();
+        }
+    };
+    if (ImGui::Button("Like charges"))
+        load_preset(presets::makeLikeChargesPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Opposite charges"))
+        load_preset(presets::makeOppositeChargesPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Electric dipole"))
+        load_preset(presets::makeElectricDipolePreset());
     ImGui::End();
 }
 

@@ -1,4 +1,5 @@
 #include "aetherion/core/scene.hpp"
+#include "aetherion/physics/em/electrostatics.hpp"
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/opengl_backend.hpp"
 
@@ -24,7 +25,16 @@ int main() {
                                                        .trails_enabled = true,
                                                        .trail_duration_s = 10.0,
                                                        .simulation_time_s = 0.0};
-    if (!renderer.render(local_scene, camera, local_settings)) {
+    local_scene.bodies()[0].charge_C = 1.0e-6;
+    aetherion::physics::em::ElectromagneticSettings electromagnetic;
+    electromagnetic.minimum_separation_m = 0.01;
+    aetherion::physics::em::ElectromagneticFieldProvider field_provider(local_scene,
+                                                                        electromagnetic);
+    local_settings.field_visualization.mode =
+        aetherion::renderer::FieldDisplayMode::observed_vectors;
+    local_settings.field_visualization.region.half_extent_m = {3.0, 3.0, 3.0};
+    local_settings.field_visualization.vectors.resolution = 3;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider)) {
         return 3;
     }
     renderer.present();
@@ -32,7 +42,10 @@ int main() {
     local_settings.simulation_time_s = 1.0;
     local_settings.show_grid = false;
     local_settings.body_radius_scale = 3.0F;
-    if (!renderer.render(local_scene, camera, local_settings))
+    local_settings.field_visualization.mode = aetherion::renderer::FieldDisplayMode::field_lines;
+    local_settings.field_visualization.lines.automatic_seed_count = 4;
+    local_settings.field_visualization.lines.step_size_m = 0.1;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 6;
     renderer.present();
 

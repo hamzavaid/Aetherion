@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "aetherion/core/scene.hpp"
+#include "aetherion/renderer/field_visualization.hpp"
 #include "aetherion/renderer/types.hpp"
 
 namespace aetherion::renderer {
@@ -17,6 +18,7 @@ struct RenderSettings {
     bool trails_enabled{};
     double trail_duration_s{2'592'000.0};
     double simulation_time_s{};
+    FieldVisualizationSettings field_visualization;
 };
 
 struct BodyInstance {

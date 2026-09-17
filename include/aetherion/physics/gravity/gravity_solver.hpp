@@ -22,6 +22,8 @@ class GravitySolver final {
   public:
     explicit GravitySolver(GravityConfig config = {});
     [[nodiscard]] core::Status computeAccelerations(core::Scene& scene);
+    /// Adds Newtonian acceleration to the existing body acceleration accumulators.
+    [[nodiscard]] core::Status accumulateAccelerations(core::Scene& scene);
     [[nodiscard]] const GravityDiagnostics& diagnostics() const noexcept { return diagnostics_; }
 
   private:

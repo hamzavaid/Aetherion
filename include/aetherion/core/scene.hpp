@@ -11,10 +11,16 @@ namespace aetherion::core {
 
 using EntityId = std::uint64_t;
 
-enum class Interaction : std::uint32_t { gravity = 1U << 0U };
+enum class Interaction : std::uint32_t {
+    gravity = 1U << 0U,
+    electrostatic = 1U << 1U,
+    magnetic = 1U << 2U
+};
 
 struct InteractionMask {
-    std::uint32_t bits{static_cast<std::uint32_t>(Interaction::gravity)};
+    std::uint32_t bits{static_cast<std::uint32_t>(Interaction::gravity) |
+                       static_cast<std::uint32_t>(Interaction::electrostatic) |
+                       static_cast<std::uint32_t>(Interaction::magnetic)};
 
     [[nodiscard]] constexpr bool contains(Interaction interaction) const noexcept {
         return (bits & static_cast<std::uint32_t>(interaction)) != 0U;
@@ -50,6 +56,8 @@ struct Body {
 class Scene final {
   public:
     [[nodiscard]] Result<EntityId> createBody(Body body);
+    /// Imports a validated non-zero ID for deterministic scene deserialization.
+    [[nodiscard]] Result<EntityId> importBody(Body body);
     [[nodiscard]] bool remove(EntityId id) noexcept;
     [[nodiscard]] Status replace(EntityId id, Body body);
     [[nodiscard]] Body* find(EntityId id) noexcept;

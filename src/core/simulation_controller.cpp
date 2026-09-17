@@ -1,6 +1,7 @@
 #include "aetherion/core/simulation_controller.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace aetherion::core {
@@ -15,6 +16,7 @@ SimulationController::SimulationController(Scene initial_scene, SimulationContro
 void SimulationController::synchronizePhysicsSettings() {
     simulation_.setPhysicsDt(settings_.physics_dt_s);
     simulation_.setGravityEnabled(settings_.gravity_enabled);
+    simulation_.setElectromagneticSettings(settings_.electromagnetism);
     simulation_.setIntegrator(settings_.integrator);
 }
 
@@ -74,6 +76,22 @@ Status SimulationController::restoreCheckpoint(CheckpointId id) {
         return Error{ErrorCode::not_found, "simulation checkpoint does not exist"};
     }
     restoreState(checkpoint->scene, checkpoint->settings, checkpoint->simulation_time_s);
+    return success();
+}
+
+Status SimulationController::loadState(Scene scene, RuntimeSettings settings) {
+    if (!std::isfinite(settings.physics_dt_s) || settings.physics_dt_s <= 0.0 ||
+        !std::isfinite(settings.time_scale) || settings.time_scale < 0.0 ||
+        settings.max_substeps == 0U) {
+        return Error{ErrorCode::invalid_argument, "loaded runtime settings are invalid"};
+    }
+    const auto em_status = physics::em::validateElectromagneticSettings(settings.electromagnetism);
+    if (!em_status)
+        return em_status;
+    initial_scene_ = scene;
+    initial_settings_ = settings;
+    checkpoints_.clear();
+    restoreState(scene, settings, 0.0);
     return success();
 }
 

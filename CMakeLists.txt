@@ -30,6 +30,7 @@ add_library(aetherion_core
   src/core/telemetry.cpp
   src/math/vec3d.cpp
   src/physics/gravity/gravity_solver.cpp
+  src/physics/em/electrostatics.cpp
   src/physics/integrator_comparison.cpp
   src/physics/integrators/rk4.cpp
   src/physics/integrators/semi_implicit_euler.cpp
@@ -44,15 +45,23 @@ aetherion_set_project_warnings(aetherion_core)
 add_library(aetherion_renderer
   src/renderer/adaptive_grid.cpp
   src/renderer/camera.cpp
+  src/renderer/field_visualization.cpp
   src/renderer/mesh.cpp
   src/renderer/picking.cpp
   src/renderer/render_data.cpp
   src/renderer/trail_history.cpp
+  src/presets/em_presets.cpp
 )
 add_library(Aetherion::renderer ALIAS aetherion_renderer)
 target_include_directories(aetherion_renderer PUBLIC include)
 target_link_libraries(aetherion_renderer PUBLIC Aetherion::core)
 aetherion_set_project_warnings(aetherion_renderer)
+
+add_library(aetherion_serialization src/serialization/scene_serialization.cpp)
+add_library(Aetherion::serialization ALIAS aetherion_serialization)
+target_include_directories(aetherion_serialization PUBLIC include)
+target_link_libraries(aetherion_serialization PUBLIC Aetherion::core Aetherion::renderer)
+aetherion_set_project_warnings(aetherion_serialization)
 
 if(AETHERION_BUILD_RENDERER)
   include(FetchContent)
@@ -102,7 +111,8 @@ if(AETHERION_BUILD_RENDERER)
   add_library(aetherion_ui src/ui/engineering_ui.cpp)
   add_library(Aetherion::ui ALIAS aetherion_ui)
   target_include_directories(aetherion_ui PUBLIC include)
-  target_link_libraries(aetherion_ui PUBLIC Aetherion::core Aetherion::renderer PRIVATE aetherion_imgui)
+  target_link_libraries(aetherion_ui PUBLIC Aetherion::core Aetherion::renderer
+                        Aetherion::serialization PRIVATE aetherion_imgui)
   aetherion_set_project_warnings(aetherion_ui)
 
   add_executable(aetherion_renderer_smoke tests/renderer_smoke.cpp)

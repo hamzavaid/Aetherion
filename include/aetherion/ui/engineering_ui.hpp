@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/simulation_controller.hpp"
@@ -46,6 +47,7 @@ class EngineeringUi final {
     int plot_metric_{};
     std::optional<physics::IntegratorComparisonReport> comparison_;
     renderer::InputCapture input_capture_;
+    std::string scene_file_status_;
 };
 
 } // namespace aetherion::ui

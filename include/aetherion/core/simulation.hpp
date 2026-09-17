@@ -3,6 +3,7 @@
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/scene.hpp"
 #include "aetherion/core/telemetry.hpp"
+#include "aetherion/physics/em/electrostatics.hpp"
 #include "aetherion/physics/gravity/gravity_solver.hpp"
 #include "aetherion/physics/integrators/integrator.hpp"
 #include "aetherion/physics/integrators/rk4.hpp"
@@ -22,6 +23,7 @@ class Simulation final {
     [[nodiscard]] Status step();
     void setPhysicsDt(double physics_dt_s);
     void setGravityEnabled(bool enabled) noexcept { gravity_enabled_ = enabled; }
+    void setElectromagneticSettings(const physics::em::ElectromagneticSettings& settings);
     void setIntegrator(physics::IntegratorKind integrator) noexcept {
         config_.integrator = integrator;
     }
@@ -31,11 +33,17 @@ class Simulation final {
     [[nodiscard]] double timeSeconds() const noexcept { return time_s_; }
     [[nodiscard]] TelemetryRecorder& telemetry() noexcept { return telemetry_; }
     [[nodiscard]] const TelemetryRecorder& telemetry() const noexcept { return telemetry_; }
+    [[nodiscard]] const physics::fields::IFieldProvider& fieldProvider() const noexcept {
+        return field_provider_;
+    }
 
   private:
     Scene& scene_;
     SimulationConfig config_;
     physics::GravitySolver gravity_;
+    physics::em::ElectromagneticSettings electromagnetic_settings_;
+    physics::em::ElectrostaticSolver electrostatics_;
+    physics::em::ElectromagneticFieldProvider field_provider_;
     physics::VelocityVerletIntegrator velocity_verlet_;
     physics::Rk4Integrator rk4_;
     TelemetryRecorder telemetry_;

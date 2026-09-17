@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "aetherion/core/scene.hpp"
+#include "aetherion/physics/em/electromagnetic_settings.hpp"
 #include "aetherion/physics/integrators/integrator.hpp"
 
 namespace aetherion::core {
@@ -17,6 +18,7 @@ struct RuntimeSettings {
     double time_scale{1.0};
     std::size_t max_substeps{8};
     bool gravity_enabled{true};
+    physics::em::ElectromagneticSettings electromagnetism;
     physics::IntegratorKind integrator{physics::IntegratorKind::semi_implicit_euler};
 };
 
@@ -50,13 +52,17 @@ struct SetTimeScaleCommand {
 struct SetGravityEnabledCommand {
     bool enabled{};
 };
+struct SetElectromagneticSettingsCommand {
+    physics::em::ElectromagneticSettings settings;
+};
 struct SetIntegratorCommand {
     physics::IntegratorKind integrator{};
 };
 
 using SimulationCommand =
     std::variant<CreateBodyCommand, DeleteBodyCommand, UpdateBodyCommand, SetPhysicsDtCommand,
-                 SetTimeScaleCommand, SetGravityEnabledCommand, SetIntegratorCommand>;
+                 SetTimeScaleCommand, SetGravityEnabledCommand, SetElectromagneticSettingsCommand,
+                 SetIntegratorCommand>;
 
 struct CommandEvent {
     std::uint64_t sequence{};
