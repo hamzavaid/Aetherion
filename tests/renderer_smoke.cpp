@@ -68,6 +68,16 @@ int main() {
     if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 8;
     renderer.present();
+    local_settings.field_visualization.field = aetherion::renderer::ObservedField::gravity;
+    local_settings.field_visualization.mode =
+        aetherion::renderer::FieldDisplayMode::observed_vectors;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 10;
+    renderer.present();
+    local_settings.field_visualization.mode = aetherion::renderer::FieldDisplayMode::field_lines;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 11;
+    renderer.present();
 
     aetherion::core::Scene astronomical_scene;
     if (!astronomical_scene.createBody({.name = "astronomical",

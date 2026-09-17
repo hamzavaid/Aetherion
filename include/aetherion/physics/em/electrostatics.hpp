@@ -29,7 +29,7 @@ class ElectrostaticSolver final {
     ElectrostaticDiagnostics diagnostics_;
 };
 
-/// Superposed point-charge and analytic external fields at arbitrary world positions.
+/// Superposed scene gravity, point-charge, and analytic EM fields at arbitrary world positions.
 class ElectromagneticFieldProvider final : public fields::IFieldProvider {
   public:
     ElectromagneticFieldProvider(const core::Scene& scene,

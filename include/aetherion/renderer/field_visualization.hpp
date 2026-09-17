@@ -11,7 +11,7 @@
 namespace aetherion::renderer {
 
 enum class FieldDisplayMode { none, observed_vectors, field_lines };
-enum class ObservedField { electric, magnetic };
+enum class ObservedField { electric, magnetic, gravity };
 enum class SamplingGeometry { volume, plane_xy, plane_xz, plane_yz };
 enum class VectorScaling { normalized, logarithmic, linear };
 
@@ -47,6 +47,8 @@ struct FieldColorSettings {
     std::array<float, 3> electric_lines{1.0F, 0.62F, 0.12F};
     std::array<float, 3> magnetic_vectors{0.72F, 0.28F, 1.0F};
     std::array<float, 3> magnetic_lines{0.45F, 0.72F, 1.0F};
+    std::array<float, 3> gravity_vectors{0.2F, 0.75F, 1.0F};
+    std::array<float, 3> gravity_lines{0.25F, 0.85F, 1.0F};
 };
 
 struct FieldVisualizationSettings {
@@ -82,7 +84,8 @@ traceFieldLines(const physics::fields::IFieldProvider& provider,
                 const FieldVisualizationSettings& settings,
                 const std::vector<math::Vec3d>& seed_points_m, double time_s);
 
-/// Deterministically creates useful seeds around electric sources or across a magnetic slice.
+/// Deterministically creates useful seeds around electric/gravity sources or across a magnetic
+/// slice.
 [[nodiscard]] std::vector<math::Vec3d>
 generateAutomaticFieldSeeds(const core::Scene& scene, const FieldVisualizationSettings& settings);
 

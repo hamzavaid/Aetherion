@@ -6,11 +6,14 @@
 
 namespace aetherion::physics::fields {
 
-/// Electromagnetic field sample in SI units in the inertial world frame.
+/// Electric, magnetic, and gravitational field sample in SI units in the inertial world frame.
 struct FieldSample {
     math::Vec3d electric_Vpm;
     math::Vec3d magnetic_T;
+    math::Vec3d gravity_mps2;
     bool valid{true};
+    /// Gravity can be singular inside a massive source without invalidating an E/B sample.
+    bool gravity_valid{true};
 };
 
 /// Read-only arbitrary-position field interface shared by physics and visualization clients.

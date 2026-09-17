@@ -12,7 +12,9 @@ namespace {
 class UniformProvider final : public physics::fields::IFieldProvider {
   public:
     physics::fields::FieldSample sample(const math::Vec3d&, double) const override {
-        return {.electric_Vpm = {2.0, 0.0, 0.0}, .magnetic_T = {0.0, 0.0, 1.0}};
+        return {.electric_Vpm = {2.0, 0.0, 0.0},
+                .magnetic_T = {0.0, 0.0, 1.0},
+                .gravity_mps2 = {-1.0, 0.0, 0.0}};
     }
     std::uint64_t revision() const noexcept override { return 1U; }
 };
@@ -156,4 +158,67 @@ TEST(FieldVisualization, ThreeDimensionalElectricSeedsSpanAllAxes) {
         seeds.begin(), seeds.end(), [](const auto& lhs, const auto& rhs) { return lhs.z < rhs.z; });
     EXPECT_GT(y_range.second->y - y_range.first->y, 0.1);
     EXPECT_GT(z_range.second->z - z_range.first->z, 0.1);
+}
+
+TEST(FieldVisualization, GravityVectorsAndLinesUseAccelerationDirection) {
+    UniformProvider provider;
+    renderer::FieldVisualizationSettings settings;
+    settings.field = renderer::ObservedField::gravity;
+    settings.region.half_extent_m = {1.0, 1.0, 1.0};
+    settings.vectors.geometry = renderer::SamplingGeometry::plane_xz;
+    settings.vectors.resolution = 3;
+    const auto glyphs = renderer::sampleObservedField(provider, settings, 0.0);
+    ASSERT_EQ(glyphs.size(), 9U);
+    EXPECT_EQ(glyphs.front().direction, (math::Vec3d{-1.0, 0.0, 0.0}));
+
+    settings.lines.step_size_m = 0.1;
+    settings.lines.maximum_steps = 100;
+    settings.lines.maximum_total_steps = 100;
+    settings.lines.maximum_length_m = 10.0;
+    settings.lines.trace_backward = false;
+    const auto lines = renderer::traceFieldLines(provider, settings, {{{0.0, 0.0, 0.0}}}, 0.0);
+    ASSERT_EQ(lines.size(), 1U);
+    EXPECT_LT(lines.front().points_m.back().x, -0.8);
+}
+
+TEST(FieldVisualization, GravityAutomaticSeedsSurroundMassiveSourcesInThreeDimensions) {
+    core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "mass", .mass_kg = 10.0, .radius_m = 0.2}));
+    ASSERT_TRUE(scene.createBody({.name = "massless",
+                                  .mass_kg = 0.0,
+                                  .radius_m = 0.2,
+                                  .state = {.position_m = {50.0, 0.0, 0.0}}}));
+    renderer::FieldVisualizationSettings settings;
+    settings.field = renderer::ObservedField::gravity;
+    settings.lines.automatic_seed_count = 32;
+    const auto seeds = renderer::generateAutomaticFieldSeeds(scene, settings);
+    ASSERT_EQ(seeds.size(), 32U);
+    const auto y_range = std::minmax_element(
+        seeds.begin(), seeds.end(), [](const auto& lhs, const auto& rhs) { return lhs.y < rhs.y; });
+    const auto z_range = std::minmax_element(
+        seeds.begin(), seeds.end(), [](const auto& lhs, const auto& rhs) { return lhs.z < rhs.z; });
+    EXPECT_GT(y_range.second->y - y_range.first->y, 0.2);
+    EXPECT_GT(z_range.second->z - z_range.first->z, 0.2);
+    EXPECT_LT(seeds.front().x, 1.0);
+}
+
+TEST(FieldLines, GravityTraceApproachesMassAndTerminatesOutsideItsSurface) {
+    core::Scene scene;
+    ASSERT_TRUE(
+        scene.createBody({.name = "mass", .mass_kg = 1.0e12, .radius_m = 0.2, .fixed = true}));
+    const physics::em::ElectromagneticSettings em;
+    const physics::em::ElectromagneticFieldProvider provider(scene, em);
+    renderer::FieldVisualizationSettings settings;
+    settings.field = renderer::ObservedField::gravity;
+    settings.region.half_extent_m = {2.0, 2.0, 2.0};
+    settings.lines.step_size_m = 0.02;
+    settings.lines.maximum_steps = 100;
+    settings.lines.maximum_total_steps = 100;
+    settings.lines.maximum_length_m = 2.0;
+    settings.lines.minimum_field_magnitude = 0.0;
+    settings.lines.trace_backward = false;
+    const auto lines = renderer::traceFieldLines(provider, settings, {{{1.0, 0.0, 0.0}}}, 0.0);
+    ASSERT_EQ(lines.size(), 1U);
+    EXPECT_LT(lines.front().points_m.back().x, 0.3);
+    EXPECT_GE(lines.front().points_m.back().x, 0.2);
 }

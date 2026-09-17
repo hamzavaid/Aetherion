@@ -141,28 +141,48 @@ fields::FieldSample sampleAnalyticField(const ElectromagneticSettings& settings,
 
 fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& position_m,
                                                          double time_s) const {
+    if (!position_m.isFinite() || !std::isfinite(time_s))
+        return {.valid = false, .gravity_valid = false};
     auto result = sampleAnalyticField(settings_, position_m, time_s);
-    if (!result.valid)
-        return result;
     const double guard_squared = settings_.minimum_separation_m * settings_.minimum_separation_m;
     const double softening_squared = settings_.softening_m * settings_.softening_m;
-    for (const auto& source : scene_.bodies()) {
-        if (source.charge_C == 0.0 ||
-            !source.interactions.contains(core::Interaction::electrostatic)) {
-            continue;
+    if (result.valid) {
+        for (const auto& source : scene_.bodies()) {
+            if (source.charge_C == 0.0 ||
+                !source.interactions.contains(core::Interaction::electrostatic)) {
+                continue;
+            }
+            const auto displacement_m = position_m - source.state.position_m;
+            const double physical_distance_squared = displacement_m.squaredNorm();
+            if (physical_distance_squared <= guard_squared) {
+                result.valid = false;
+                break;
+            }
+            const double distance_squared = physical_distance_squared + softening_squared;
+            const double inverse_distance_cubed =
+                1.0 / (distance_squared * std::sqrt(distance_squared));
+            result.electric_Vpm += constants::coulomb_constant * source.charge_C * displacement_m *
+                                   inverse_distance_cubed;
         }
-        const auto displacement_m = position_m - source.state.position_m;
-        const double physical_distance_squared = displacement_m.squaredNorm();
-        if (physical_distance_squared <= guard_squared)
-            return {.valid = false};
-        const double distance_squared = physical_distance_squared + softening_squared;
+    }
+    for (const auto& source : scene_.bodies()) {
+        if (source.mass_kg == 0.0 || !source.interactions.contains(core::Interaction::gravity))
+            continue;
+        const auto toward_source_m = source.state.position_m - position_m;
+        const double distance_squared = toward_source_m.squaredNorm();
+        if (distance_squared <= source.radius_m * source.radius_m) {
+            result.gravity_valid = false;
+            break;
+        }
         const double inverse_distance_cubed =
             1.0 / (distance_squared * std::sqrt(distance_squared));
-        result.electric_Vpm +=
-            constants::coulomb_constant * source.charge_C * displacement_m * inverse_distance_cubed;
+        result.gravity_mps2 += constants::gravitational_constant * source.mass_kg *
+                               toward_source_m * inverse_distance_cubed;
     }
     if (!result.electric_Vpm.isFinite() || !result.magnetic_T.isFinite())
-        return {.valid = false};
+        result.valid = false;
+    if (!result.gravity_mps2.isFinite())
+        result.gravity_valid = false;
     return result;
 }
 
@@ -172,7 +192,9 @@ std::uint64_t ElectromagneticFieldProvider::revision() const noexcept {
     hashDouble(hash, settings_.softening_m);
     for (const auto& body : scene_.bodies()) {
         hashDouble(hash, static_cast<double>(body.id));
+        hashDouble(hash, body.mass_kg);
         hashDouble(hash, body.charge_C);
+        hashDouble(hash, body.radius_m);
         hashVector(hash, body.state.position_m);
         hashDouble(hash, static_cast<double>(body.interactions.bits));
     }

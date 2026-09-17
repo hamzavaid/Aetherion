@@ -40,9 +40,24 @@ math::Vec3d flattenToPlane(math::Vec3d point, const FieldVisualizationSettings& 
 
 math::Vec3d selectedVector(const physics::fields::FieldSample& sample,
                            const FieldVisualizationSettings& settings) {
-    auto value =
-        settings.field == ObservedField::electric ? sample.electric_Vpm : sample.magnetic_T;
+    math::Vec3d value;
+    switch (settings.field) {
+    case ObservedField::electric:
+        value = sample.electric_Vpm;
+        break;
+    case ObservedField::magnetic:
+        value = sample.magnetic_T;
+        break;
+    case ObservedField::gravity:
+        value = sample.gravity_mps2;
+        break;
+    }
     return settings.planar_2d ? projectToPlane(value, effectiveGeometry(settings)) : value;
+}
+
+bool selectedFieldValid(const physics::fields::FieldSample& sample,
+                        const FieldVisualizationSettings& settings) {
+    return settings.field == ObservedField::gravity ? sample.gravity_valid : sample.valid;
 }
 
 bool insideRegion(const math::Vec3d& point, const FieldRegion& region) {
@@ -77,7 +92,7 @@ bool unitField(const physics::fields::IFieldProvider& provider,
                const FieldVisualizationSettings& settings, const math::Vec3d& position_m,
                double time_s, double minimum_magnitude, math::Vec3d& direction) {
     const auto sample = provider.sample(position_m, time_s);
-    if (!sample.valid)
+    if (!selectedFieldValid(sample, settings))
         return false;
     const auto vector = selectedVector(sample, settings);
     const double magnitude = vector.norm();
@@ -174,8 +189,8 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
                 const auto sample = provider.sample(position, time_s);
                 const auto vector = selectedVector(sample, settings);
                 const double magnitude = vector.norm();
-                if (!sample.valid || !vector.isFinite() || !std::isfinite(magnitude) ||
-                    magnitude <= settings.vectors.minimum_magnitude ||
+                if (!selectedFieldValid(sample, settings) || !vector.isFinite() ||
+                    !std::isfinite(magnitude) || magnitude <= settings.vectors.minimum_magnitude ||
                     magnitude > settings.vectors.maximum_magnitude) {
                     continue;
                 }
@@ -236,17 +251,23 @@ std::vector<math::Vec3d> generateAutomaticFieldSeeds(const core::Scene& scene,
     const std::size_t desired = settings.lines.automatic_seed_count;
     if (desired == 0U)
         return seeds;
-    if (settings.field == ObservedField::electric) {
-        std::vector<const core::Body*> charged;
+    if (settings.field == ObservedField::electric || settings.field == ObservedField::gravity) {
+        std::vector<const core::Body*> sources;
         for (const auto& body : scene.bodies()) {
-            if (body.charge_C != 0.0)
-                charged.push_back(&body);
+            const bool electric_source =
+                settings.field == ObservedField::electric && body.charge_C != 0.0 &&
+                body.interactions.contains(core::Interaction::electrostatic);
+            const bool gravity_source = settings.field == ObservedField::gravity &&
+                                        body.mass_kg > 0.0 &&
+                                        body.interactions.contains(core::Interaction::gravity);
+            if (electric_source || gravity_source)
+                sources.push_back(&body);
         }
-        if (charged.empty())
+        if (sources.empty())
             return seeds;
         seeds.reserve(desired);
         for (std::size_t index = 0; index < desired; ++index) {
-            const auto& body = *charged[index % charged.size()];
+            const auto& body = *sources[index % sources.size()];
             const double phase =
                 2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(desired);
             const double radius = std::max(body.radius_m * 1.2, settings.lines.step_size_m * 2.0);

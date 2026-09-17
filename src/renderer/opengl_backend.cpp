@@ -577,13 +577,13 @@ class OpenGlRenderer::Impl final {
         glBindVertexArray(trail_vao_);
         const auto& colors = settings.field_visualization.colors;
         const std::array<float, 3> color = [&]() {
+            const bool vectors =
+                settings.field_visualization.mode == FieldDisplayMode::observed_vectors;
             if (settings.field_visualization.field == ObservedField::electric)
-                return settings.field_visualization.mode == FieldDisplayMode::observed_vectors
-                           ? colors.electric_vectors
-                           : colors.electric_lines;
-            return settings.field_visualization.mode == FieldDisplayMode::observed_vectors
-                       ? colors.magnetic_vectors
-                       : colors.magnetic_lines;
+                return vectors ? colors.electric_vectors : colors.electric_lines;
+            if (settings.field_visualization.field == ObservedField::magnetic)
+                return vectors ? colors.magnetic_vectors : colors.magnetic_lines;
+            return vectors ? colors.gravity_vectors : colors.gravity_lines;
         }();
         if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
             std::vector<GridVertexGpu> vertices;

@@ -346,6 +346,10 @@ std::string serializeScene(const SceneDocument& document) {
     writeColor(out, field.colors.magnetic_vectors);
     out << ",\"magneticLines\":";
     writeColor(out, field.colors.magnetic_lines);
+    out << ",\"gravityVectors\":";
+    writeColor(out, field.colors.gravity_vectors);
+    out << ",\"gravityLines\":";
+    writeColor(out, field.colors.gravity_lines);
     out << "}}}}\n";
     return out.str();
 }
@@ -409,7 +413,7 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         auto& field = document.visualization.field_visualization;
         const auto& field_json = object(member(visual, "field"));
         field.mode = enumValue<renderer::FieldDisplayMode>(field_json, "mode", 2);
-        field.field = enumValue<renderer::ObservedField>(field_json, "type", 1);
+        field.field = enumValue<renderer::ObservedField>(field_json, "type", 2);
         field.planar_2d = optionalBoolean(field_json, "planar2d", false);
         field.region.center_m = vector(member(field_json, "center"));
         field.region.half_extent_m = vector(member(field_json, "halfExtent"));
@@ -439,6 +443,14 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
             field.colors.electric_lines = color(member(colors, "electricLines"));
             field.colors.magnetic_vectors = color(member(colors, "magneticVectors"));
             field.colors.magnetic_lines = color(member(colors, "magneticLines"));
+            if (const auto gravity_vectors = colors.find("gravityVectors");
+                gravity_vectors != colors.end()) {
+                field.colors.gravity_vectors = color(gravity_vectors->second);
+            }
+            if (const auto gravity_lines = colors.find("gravityLines");
+                gravity_lines != colors.end()) {
+                field.colors.gravity_lines = color(gravity_lines->second);
+            }
         }
         const auto em_status =
             physics::em::validateElectromagneticSettings(document.runtime.electromagnetism);

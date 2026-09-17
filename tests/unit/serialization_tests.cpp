@@ -26,7 +26,7 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
          .singularity_radius_m = 0.3});
     auto& field = original.visualization.field_visualization;
     field.mode = aetherion::renderer::FieldDisplayMode::field_lines;
-    field.field = aetherion::renderer::ObservedField::magnetic;
+    field.field = aetherion::renderer::ObservedField::gravity;
     field.planar_2d = true;
     field.region.center_m = {3.0, 2.0, 1.0};
     field.vectors.resolution = 7;
@@ -36,6 +36,8 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     field.colors.electric_lines = {0.4F, 0.5F, 0.6F};
     field.colors.magnetic_vectors = {0.7F, 0.8F, 0.9F};
     field.colors.magnetic_lines = {0.15F, 0.25F, 0.35F};
+    field.colors.gravity_vectors = {0.2F, 0.4F, 0.6F};
+    field.colors.gravity_lines = {0.3F, 0.5F, 0.7F};
 
     const auto encoded = aetherion::serialization::serializeScene(original);
     const auto decoded = aetherion::serialization::deserializeScene(encoded);
@@ -62,7 +64,7 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     EXPECT_EQ(decoded.value().visualization.field_visualization.mode,
               aetherion::renderer::FieldDisplayMode::field_lines);
     EXPECT_EQ(decoded.value().visualization.field_visualization.field,
-              aetherion::renderer::ObservedField::magnetic);
+              aetherion::renderer::ObservedField::gravity);
     EXPECT_TRUE(decoded.value().visualization.field_visualization.planar_2d);
     EXPECT_EQ(decoded.value().visualization.field_visualization.lines.custom_seeds_m.size(), 2U);
     EXPECT_EQ(decoded.value().visualization.field_visualization.colors.electric_vectors,
@@ -73,6 +75,10 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
               field.colors.magnetic_vectors);
     EXPECT_EQ(decoded.value().visualization.field_visualization.colors.magnetic_lines,
               field.colors.magnetic_lines);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.gravity_vectors,
+              field.colors.gravity_vectors);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.colors.gravity_lines,
+              field.colors.gravity_lines);
 }
 
 TEST(SceneSerialization, RejectsUnknownSchemaAndNonFiniteJsonNumber) {

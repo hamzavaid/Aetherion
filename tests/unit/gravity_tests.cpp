@@ -5,6 +5,7 @@
 #include <numbers>
 
 #include "aetherion/physics/constants.hpp"
+#include "aetherion/physics/em/electrostatics.hpp"
 
 using aetherion::core::Body;
 using aetherion::core::Scene;
@@ -39,4 +40,24 @@ TEST(GravitySolver, CoincidentBodiesAreSkippedAndDiagnosed) {
     ASSERT_TRUE(solver.computeAccelerations(scene));
     EXPECT_EQ(solver.diagnostics().coincident_pairs, 1U);
     EXPECT_EQ(scene.bodies()[0].state.acceleration_mps2, (aetherion::math::Vec3d{}));
+}
+
+TEST(GravityField, SamplesAnalyticalAccelerationAndGuardsBodyInterior) {
+    Scene scene;
+    ASSERT_TRUE(scene.createBody(Body{.name = "source",
+                                      .mass_kg = 5.0e10,
+                                      .radius_m = 2.0,
+                                      .fixed = true,
+                                      .state = {.position_m = {1.0, 0.0, 0.0}}}));
+    const aetherion::physics::em::ElectromagneticSettings em;
+    const aetherion::physics::em::ElectromagneticFieldProvider provider(scene, em);
+
+    const auto sample = provider.sample({4.0, 0.0, 0.0}, 0.0);
+    ASSERT_TRUE(sample.valid);
+    const double expected = aetherion::physics::constants::gravitational_constant * 5.0e10 / 9.0;
+    EXPECT_NEAR(sample.gravity_mps2.x, -expected, expected * 1.0e-14);
+    EXPECT_NEAR(sample.gravity_mps2.y, 0.0, expected * 1.0e-14);
+    EXPECT_NEAR(sample.gravity_mps2.z, 0.0, expected * 1.0e-14);
+
+    EXPECT_FALSE(provider.sample({2.0, 0.0, 0.0}, 0.0).gravity_valid);
 }

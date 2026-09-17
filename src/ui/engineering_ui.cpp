@@ -424,13 +424,11 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                             &render_settings.trail_duration_s, &minimum_trail_s, &maximum_trail_s,
                             "%.4g s", ImGuiSliderFlags_Logarithmic);
     }
-    ImGui::SeparatorText("Electric / Magnetic Field Display");
+    ImGui::SeparatorText("Electric / Magnetic / Gravity Field Display");
     auto& field = render_settings.field_visualization;
-    if (ImGui::Button(field.planar_2d ? "Return to 3D field view"
-                                      : "Show 2D electric-field view")) {
+    if (ImGui::Button(field.planar_2d ? "Return to 3D field view" : "Show 2D field view")) {
         field.planar_2d = !field.planar_2d;
         if (field.planar_2d) {
-            field.field = renderer::ObservedField::electric;
             field.vectors.geometry = renderer::SamplingGeometry::plane_xz;
             if (field.mode == renderer::FieldDisplayMode::none)
                 field.mode = renderer::FieldDisplayMode::observed_vectors;
@@ -442,9 +440,9 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     int field_mode = static_cast<int>(field.mode);
     if (ImGui::Combo("Display mode", &field_mode, field_modes, 3))
         field.mode = static_cast<renderer::FieldDisplayMode>(field_mode);
-    constexpr const char* field_types[] = {"Electric (V/m)", "Magnetic (T)"};
+    constexpr const char* field_types[] = {"Electric (V/m)", "Magnetic (T)", "Gravity (m/s^2)"};
     int field_type = static_cast<int>(field.field);
-    if (ImGui::Combo("Observed field", &field_type, field_types, 2))
+    if (ImGui::Combo("Observed field", &field_type, field_types, 3))
         field.field = static_cast<renderer::ObservedField>(field_type);
     std::array<double, 3> region_center = {field.region.center_m.x, field.region.center_m.y,
                                            field.region.center_m.z};
@@ -504,21 +502,42 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         if (seed_to_remove >= 0)
             field.lines.custom_seeds_m.erase(field.lines.custom_seeds_m.begin() + seed_to_remove);
     }
-    ImGui::SeparatorText("Field Colors");
-    ImGui::ColorEdit3("Electric vectors", field.colors.electric_vectors.data());
-    ImGui::ColorEdit3("Electric field lines", field.colors.electric_lines.data());
-    ImGui::ColorEdit3("Magnetic vectors", field.colors.magnetic_vectors.data());
-    ImGui::ColorEdit3("Magnetic field lines", field.colors.magnetic_lines.data());
+    if (field.mode != renderer::FieldDisplayMode::none) {
+        ImGui::SeparatorText("Active Field Color");
+        const bool vectors = field.mode == renderer::FieldDisplayMode::observed_vectors;
+        if (field.field == renderer::ObservedField::electric) {
+            ImGui::ColorEdit3(vectors ? "Electric vectors" : "Electric field lines",
+                              vectors ? field.colors.electric_vectors.data()
+                                      : field.colors.electric_lines.data());
+        } else if (field.field == renderer::ObservedField::magnetic) {
+            ImGui::ColorEdit3(vectors ? "Magnetic vectors" : "Magnetic field lines",
+                              vectors ? field.colors.magnetic_vectors.data()
+                                      : field.colors.magnetic_lines.data());
+        } else {
+            ImGui::ColorEdit3(vectors ? "Gravity vectors" : "Gravity field lines",
+                              vectors ? field.colors.gravity_vectors.data()
+                                      : field.colors.gravity_lines.data());
+        }
+    }
     ImGui::SeparatorText("Gravity Presets");
     const auto load_gravity_preset = [&](presets::GravityPreset preset) {
         if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
             render_settings.meters_to_render_units = preset.meters_to_render_units;
             render_settings.minimum_apparent_radius = preset.minimum_apparent_radius;
             render_settings.body_radius_scale = preset.body_radius_scale;
-            render_settings.field_visualization.mode = renderer::FieldDisplayMode::none;
-            render_settings.field_visualization.planar_2d = false;
             const auto bounds =
                 renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
+            auto& gravity_field = render_settings.field_visualization;
+            gravity_field.mode = renderer::FieldDisplayMode::field_lines;
+            gravity_field.field = renderer::ObservedField::gravity;
+            gravity_field.planar_2d = false;
+            gravity_field.region.center_m = bounds.center_world_m;
+            const double field_radius_m = std::max(bounds.radius_m * 1.25, 1.0);
+            gravity_field.region.half_extent_m = {field_radius_m, field_radius_m, field_radius_m};
+            gravity_field.lines.automatic_seed_count = 32;
+            gravity_field.lines.step_size_m = field_radius_m / 200.0;
+            gravity_field.lines.maximum_length_m = field_radius_m * 3.0;
+            gravity_field.lines.minimum_field_magnitude = 0.0;
             camera.focus(bounds.center_world_m, bounds.radius_m);
             selected_.reset();
         }
