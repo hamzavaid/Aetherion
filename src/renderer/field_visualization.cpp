@@ -9,8 +9,40 @@
 namespace aetherion::renderer {
 namespace {
 
-math::Vec3d selectedVector(const physics::fields::FieldSample& sample, ObservedField field) {
-    return field == ObservedField::electric ? sample.electric_Vpm : sample.magnetic_T;
+SamplingGeometry effectiveGeometry(const FieldVisualizationSettings& settings) {
+    if (settings.planar_2d && settings.vectors.geometry == SamplingGeometry::volume)
+        return SamplingGeometry::plane_xz;
+    return settings.vectors.geometry;
+}
+
+math::Vec3d projectToPlane(math::Vec3d value, SamplingGeometry geometry) {
+    if (geometry == SamplingGeometry::plane_xy)
+        value.z = 0.0;
+    if (geometry == SamplingGeometry::plane_xz)
+        value.y = 0.0;
+    if (geometry == SamplingGeometry::plane_yz)
+        value.x = 0.0;
+    return value;
+}
+
+math::Vec3d flattenToPlane(math::Vec3d point, const FieldVisualizationSettings& settings) {
+    if (!settings.planar_2d)
+        return point;
+    const auto geometry = effectiveGeometry(settings);
+    if (geometry == SamplingGeometry::plane_xy)
+        point.z = settings.region.center_m.z;
+    if (geometry == SamplingGeometry::plane_xz)
+        point.y = settings.region.center_m.y;
+    if (geometry == SamplingGeometry::plane_yz)
+        point.x = settings.region.center_m.x;
+    return point;
+}
+
+math::Vec3d selectedVector(const physics::fields::FieldSample& sample,
+                           const FieldVisualizationSettings& settings) {
+    auto value =
+        settings.field == ObservedField::electric ? sample.electric_Vpm : sample.magnetic_T;
+    return settings.planar_2d ? projectToPlane(value, effectiveGeometry(settings)) : value;
 }
 
 bool insideRegion(const math::Vec3d& point, const FieldRegion& region) {
@@ -41,13 +73,13 @@ void validate(const FieldVisualizationSettings& settings) {
     }
 }
 
-bool unitField(const physics::fields::IFieldProvider& provider, ObservedField field,
-               const math::Vec3d& position_m, double time_s, double minimum_magnitude,
-               math::Vec3d& direction) {
+bool unitField(const physics::fields::IFieldProvider& provider,
+               const FieldVisualizationSettings& settings, const math::Vec3d& position_m,
+               double time_s, double minimum_magnitude, math::Vec3d& direction) {
     const auto sample = provider.sample(position_m, time_s);
     if (!sample.valid)
         return false;
-    const auto vector = selectedVector(sample, field);
+    const auto vector = selectedVector(sample, settings);
     const double magnitude = vector.norm();
     if (!std::isfinite(magnitude) || magnitude <= minimum_magnitude)
         return false;
@@ -70,13 +102,13 @@ std::vector<math::Vec3d> traceDirection(const physics::fields::IFieldProvider& p
         math::Vec3d k3;
         math::Vec3d k4;
         const double h = sign * settings.lines.step_size_m;
-        if (!unitField(provider, settings.field, position, time_s,
-                       settings.lines.minimum_field_magnitude, k1) ||
-            !unitField(provider, settings.field, position + k1 * (0.5 * h), time_s,
+        if (!unitField(provider, settings, position, time_s, settings.lines.minimum_field_magnitude,
+                       k1) ||
+            !unitField(provider, settings, position + k1 * (0.5 * h), time_s,
                        settings.lines.minimum_field_magnitude, k2) ||
-            !unitField(provider, settings.field, position + k2 * (0.5 * h), time_s,
+            !unitField(provider, settings, position + k2 * (0.5 * h), time_s,
                        settings.lines.minimum_field_magnitude, k3) ||
-            !unitField(provider, settings.field, position + k3 * h, time_s,
+            !unitField(provider, settings, position + k3 * h, time_s,
                        settings.lines.minimum_field_magnitude, k4)) {
             break;
         }
@@ -121,11 +153,10 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
         throw std::invalid_argument("field sampling time must be finite in s");
     std::vector<FieldVectorGlyph> glyphs;
     const auto count = settings.vectors.resolution;
-    const std::size_t y_count = settings.vectors.geometry == SamplingGeometry::volume ? count : 1U;
-    const std::size_t z_count =
-        settings.vectors.geometry == SamplingGeometry::plane_xy ? 1U : count;
-    const std::size_t x_count =
-        settings.vectors.geometry == SamplingGeometry::plane_yz ? 1U : count;
+    const auto geometry = effectiveGeometry(settings);
+    const std::size_t y_count = geometry == SamplingGeometry::volume ? count : 1U;
+    const std::size_t z_count = geometry == SamplingGeometry::plane_xy ? 1U : count;
+    const std::size_t x_count = geometry == SamplingGeometry::plane_yz ? 1U : count;
     glyphs.reserve(x_count * y_count * z_count);
     for (std::size_t z = 0; z < z_count; ++z) {
         for (std::size_t y = 0; y < y_count; ++y) {
@@ -141,7 +172,7 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
                     position.z =
                         coordinate(z, z_count, position.z, settings.region.half_extent_m.z);
                 const auto sample = provider.sample(position, time_s);
-                const auto vector = selectedVector(sample, settings.field);
+                const auto vector = selectedVector(sample, settings);
                 const double magnitude = vector.norm();
                 if (!sample.valid || !vector.isFinite() || !std::isfinite(magnitude) ||
                     magnitude <= settings.vectors.minimum_magnitude ||
@@ -174,18 +205,21 @@ std::vector<TracedFieldLine> traceFieldLines(const physics::fields::IFieldProvid
     for (const auto& seed : seed_points_m) {
         if (remaining_work == 0U)
             break;
-        if (!seed.isFinite() || !insideRegion(seed, settings.region))
+        const auto planar_seed = flattenToPlane(seed, settings);
+        if (!planar_seed.isFinite() || !insideRegion(planar_seed, settings.region))
             continue;
         std::vector<math::Vec3d> combined;
         if (settings.lines.trace_backward) {
-            auto backward = traceDirection(provider, settings, seed, time_s, -1.0, remaining_work);
+            auto backward =
+                traceDirection(provider, settings, planar_seed, time_s, -1.0, remaining_work);
             combined.assign(backward.rbegin(), backward.rend());
             if (!combined.empty())
                 combined.pop_back();
         }
-        combined.push_back(seed);
+        combined.push_back(planar_seed);
         if (settings.lines.trace_forward) {
-            auto forward = traceDirection(provider, settings, seed, time_s, 1.0, remaining_work);
+            auto forward =
+                traceDirection(provider, settings, planar_seed, time_s, 1.0, remaining_work);
             if (!forward.empty())
                 combined.insert(combined.end(), std::next(forward.begin()), forward.end());
         }
@@ -216,8 +250,12 @@ std::vector<math::Vec3d> generateAutomaticFieldSeeds(const core::Scene& scene,
             const double phase =
                 2.0 * std::numbers::pi * static_cast<double>(index) / static_cast<double>(desired);
             const double radius = std::max(body.radius_m * 1.2, settings.lines.step_size_m * 2.0);
-            seeds.push_back(body.state.position_m +
-                            math::Vec3d{radius * std::cos(phase), radius * std::sin(phase), 0.0});
+            math::Vec3d offset{radius * std::cos(phase), radius * std::sin(phase), 0.0};
+            if (settings.planar_2d && effectiveGeometry(settings) == SamplingGeometry::plane_xz)
+                offset = {radius * std::cos(phase), 0.0, radius * std::sin(phase)};
+            if (settings.planar_2d && effectiveGeometry(settings) == SamplingGeometry::plane_yz)
+                offset = {0.0, radius * std::cos(phase), radius * std::sin(phase)};
+            seeds.push_back(flattenToPlane(body.state.position_m + offset, settings));
         }
         return seeds;
     }
@@ -236,6 +274,7 @@ std::uint64_t fieldVisualizationRevision(const FieldVisualizationSettings& setti
     std::uint64_t hash = 14'695'981'039'346'656'037ULL;
     hashDouble(hash, static_cast<double>(settings.mode));
     hashDouble(hash, static_cast<double>(settings.field));
+    hashDouble(hash, settings.planar_2d ? 1.0 : 0.0);
     hashVector(hash, settings.region.center_m);
     hashVector(hash, settings.region.half_extent_m);
     hashDouble(hash, static_cast<double>(settings.vectors.geometry));

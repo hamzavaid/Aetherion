@@ -14,11 +14,14 @@ class Camera final {
     void pan(double horizontal_m, double vertical_m) noexcept;
     void zoom(double logarithmic_delta) noexcept;
     void focus(const math::Vec3d& target_world_m, double bounding_radius_m);
+    /// Enables a locked top-down orthographic engineering view of the world XZ plane.
+    void setTwoDimensional(bool enabled) noexcept;
     void reset() noexcept;
 
     [[nodiscard]] math::Vec3d positionWorld() const noexcept;
     [[nodiscard]] const math::Vec3d& targetWorld() const noexcept { return target_world_m_; }
     [[nodiscard]] double distanceMeters() const noexcept { return distance_m_; }
+    [[nodiscard]] bool isTwoDimensional() const noexcept { return two_dimensional_; }
     [[nodiscard]] Ray rayFromNdc(double x_ndc, double y_ndc, double aspect_ratio) const;
     [[nodiscard]] Mat4f viewProjection(double aspect_ratio,
                                        double meters_to_render_units = 1.0) const;
@@ -28,7 +31,10 @@ class Camera final {
     double distance_m_{10.0};
     double yaw_rad_{0.65};
     double pitch_rad_{0.65};
+    double saved_yaw_rad_{0.65};
+    double saved_pitch_rad_{0.65};
     double vertical_fov_rad_{0.7853981633974483};
+    bool two_dimensional_{};
 };
 
 } // namespace aetherion::renderer

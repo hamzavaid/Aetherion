@@ -27,6 +27,7 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     auto& field = original.visualization.field_visualization;
     field.mode = aetherion::renderer::FieldDisplayMode::field_lines;
     field.field = aetherion::renderer::ObservedField::magnetic;
+    field.planar_2d = true;
     field.region.center_m = {3.0, 2.0, 1.0};
     field.vectors.resolution = 7;
     field.lines.step_size_m = 0.03;
@@ -58,6 +59,7 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
               aetherion::renderer::FieldDisplayMode::field_lines);
     EXPECT_EQ(decoded.value().visualization.field_visualization.field,
               aetherion::renderer::ObservedField::magnetic);
+    EXPECT_TRUE(decoded.value().visualization.field_visualization.planar_2d);
     EXPECT_EQ(decoded.value().visualization.field_visualization.lines.custom_seeds_m.size(), 2U);
 }
 

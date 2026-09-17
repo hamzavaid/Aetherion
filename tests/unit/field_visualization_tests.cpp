@@ -14,6 +14,14 @@ class UniformProvider final : public physics::fields::IFieldProvider {
     }
     std::uint64_t revision() const noexcept override { return 1U; }
 };
+
+class OutOfPlaneProvider final : public physics::fields::IFieldProvider {
+  public:
+    physics::fields::FieldSample sample(const math::Vec3d&, double) const override {
+        return {.electric_Vpm = {1.0, 5.0, 2.0}};
+    }
+    std::uint64_t revision() const noexcept override { return 2U; }
+};
 } // namespace
 
 TEST(FieldVisualization, VectorSamplingSupportsPlanesVolumesAndNormalization) {
@@ -90,4 +98,43 @@ TEST(FieldLines, PositivePointChargeLinesDepartAndTerminateBeforeSingularity) {
     const auto inward = renderer::traceFieldLines(provider, settings, {{{0.1, 0.0, 0.0}}}, 0.0);
     ASSERT_EQ(inward.size(), 1U);
     EXPECT_GE(inward[0].points_m.front().x, 0.05);
+}
+
+TEST(FieldVisualization, PlanarModeRemovesOutOfPlaneVectorAndLineComponents) {
+    OutOfPlaneProvider provider;
+    renderer::FieldVisualizationSettings settings;
+    settings.field = renderer::ObservedField::electric;
+    settings.planar_2d = true;
+    settings.region.half_extent_m = {1.0, 1.0, 1.0};
+    settings.vectors.geometry = renderer::SamplingGeometry::plane_xz;
+    settings.vectors.resolution = 3;
+    const auto glyphs = renderer::sampleObservedField(provider, settings, 0.0);
+    ASSERT_EQ(glyphs.size(), 9U);
+    EXPECT_NEAR(glyphs.front().direction.y, 0.0, 1.0e-15);
+    EXPECT_GT(glyphs.front().direction.z, 0.0);
+
+    settings.lines.step_size_m = 0.05;
+    settings.lines.maximum_steps = 20;
+    settings.lines.maximum_total_steps = 20;
+    settings.lines.maximum_length_m = 1.0;
+    settings.lines.trace_backward = false;
+    const auto lines = renderer::traceFieldLines(provider, settings, {{{0.0, 0.7, 0.0}}}, 0.0);
+    ASSERT_EQ(lines.size(), 1U);
+    for (const auto& point : lines[0].points_m)
+        EXPECT_NEAR(point.y, settings.region.center_m.y, 1.0e-15);
+}
+
+TEST(FieldVisualization, PlanarElectricSeedsUseSelectedSlice) {
+    core::Scene scene;
+    ASSERT_TRUE(
+        scene.createBody({.name = "charge", .mass_kg = 1.0, .charge_C = 1.0, .radius_m = 0.1}));
+    renderer::FieldVisualizationSettings settings;
+    settings.planar_2d = true;
+    settings.vectors.geometry = renderer::SamplingGeometry::plane_xz;
+    settings.lines.automatic_seed_count = 8;
+    const auto seeds = renderer::generateAutomaticFieldSeeds(scene, settings);
+    ASSERT_EQ(seeds.size(), 8U);
+    for (const auto& seed : seeds)
+        EXPECT_DOUBLE_EQ(seed.y, settings.region.center_m.y);
+    EXPECT_NE(seeds[0].z, seeds[1].z);
 }

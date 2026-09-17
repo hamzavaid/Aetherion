@@ -44,6 +44,8 @@ struct FieldLineSettings {
 struct FieldVisualizationSettings {
     FieldDisplayMode mode{FieldDisplayMode::none};
     ObservedField field{ObservedField::electric};
+    /// Projects samples and traces onto the selected 2D sampling plane for display only.
+    bool planar_2d{};
     FieldRegion region;
     VectorFieldSettings vectors;
     FieldLineSettings lines;

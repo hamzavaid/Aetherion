@@ -444,6 +444,18 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     }
     ImGui::SeparatorText("Electric / Magnetic Field Display");
     auto& field = render_settings.field_visualization;
+    if (ImGui::Button(field.planar_2d ? "Return to 3D field view"
+                                      : "Show 2D electric-field view")) {
+        field.planar_2d = !field.planar_2d;
+        if (field.planar_2d) {
+            field.field = renderer::ObservedField::electric;
+            field.vectors.geometry = renderer::SamplingGeometry::plane_xz;
+            if (field.mode == renderer::FieldDisplayMode::none)
+                field.mode = renderer::FieldDisplayMode::observed_vectors;
+        }
+    }
+    if (field.planar_2d)
+        ImGui::TextDisabled("Orthographic XZ view; out-of-plane field components are hidden.");
     constexpr const char* field_modes[] = {"None", "Observed Vector Field", "Field Lines"};
     int field_mode = static_cast<int>(field.mode);
     if (ImGui::Combo("Display mode", &field_mode, field_modes, 3))
@@ -551,6 +563,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SameLine();
     if (ImGui::Button("Magnetic field lines"))
         load_preset(presets::makeMagneticFieldLinesPreset());
+    camera.setTwoDimensional(render_settings.field_visualization.planar_2d);
     ImGui::End();
 }
 

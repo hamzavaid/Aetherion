@@ -181,6 +181,15 @@ bool boolean(const Object& value, const char* key) {
         throw std::runtime_error(std::string{"expected JSON boolean: "} + key);
     return *result;
 }
+bool optionalBoolean(const Object& value, const char* key, bool fallback) {
+    const auto found = value.find(key);
+    if (found == value.end())
+        return fallback;
+    const auto* result = std::get_if<bool>(&found->second.value);
+    if (result == nullptr)
+        throw std::runtime_error(std::string{"expected JSON boolean: "} + key);
+    return *result;
+}
 std::string string(const Object& value, const char* key) {
     const auto* result = std::get_if<std::string>(&member(value, key).value);
     if (result == nullptr)
@@ -293,7 +302,8 @@ std::string serializeScene(const SceneDocument& document) {
         << ",\"trails\":" << boolText(visual.trails_enabled)
         << ",\"trailDuration\":" << visual.trail_duration_s
         << ",\"field\":{\"mode\":" << static_cast<int>(field.mode)
-        << ",\"type\":" << static_cast<int>(field.field) << ",\"center\":";
+        << ",\"type\":" << static_cast<int>(field.field)
+        << ",\"planar2d\":" << boolText(field.planar_2d) << ",\"center\":";
     writeVector(out, field.region.center_m);
     out << ",\"halfExtent\":";
     writeVector(out, field.region.half_extent_m);
@@ -381,6 +391,7 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         const auto& field_json = object(member(visual, "field"));
         field.mode = enumValue<renderer::FieldDisplayMode>(field_json, "mode", 2);
         field.field = enumValue<renderer::ObservedField>(field_json, "type", 1);
+        field.planar_2d = optionalBoolean(field_json, "planar2d", false);
         field.region.center_m = vector(member(field_json, "center"));
         field.region.half_extent_m = vector(member(field_json, "halfExtent"));
         const auto& vectors = object(member(field_json, "vectors"));

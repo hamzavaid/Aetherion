@@ -44,3 +44,21 @@ TEST(Camera, ProjectionRetainsScaleInvarianceForMeterAndAstronomicalRenderUnits)
     EXPECT_NEAR(astronomical_scale[10], meter_scale[10], 1.0e-6F);
     EXPECT_NEAR(astronomical_scale[14], meter_scale[14] * 1.0e-9F, 1.0e-15F);
 }
+
+TEST(Camera, TwoDimensionalModeUsesLockedTopDownOrthographicProjection) {
+    Camera camera;
+    camera.focus({2.0, 0.0, -3.0}, 4.0);
+    camera.setTwoDimensional(true);
+    ASSERT_TRUE(camera.isTwoDimensional());
+    const auto before_orbit = camera.positionWorld();
+    camera.orbit(1.0, -0.5);
+    EXPECT_EQ(camera.positionWorld(), before_orbit);
+    const auto ray = camera.rayFromNdc(0.0, 0.0, 1.0);
+    EXPECT_NEAR(ray.direction.x, 0.0, 1.0e-12);
+    EXPECT_LT(ray.direction.y, -0.999999);
+    const auto projection = camera.viewProjection(1.0, 1.0);
+    EXPECT_FLOAT_EQ(projection[11], 0.0F);
+    EXPECT_FLOAT_EQ(projection[15], 1.0F);
+    camera.setTwoDimensional(false);
+    EXPECT_FALSE(camera.isTwoDimensional());
+}

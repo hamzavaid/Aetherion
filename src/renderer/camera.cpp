@@ -30,11 +30,26 @@ Mat4f multiply(const Mat4f& lhs, const Mat4f& rhs) {
 } // namespace
 
 void Camera::orbit(double yaw_delta_rad, double pitch_delta_rad) noexcept {
-    if (!std::isfinite(yaw_delta_rad) || !std::isfinite(pitch_delta_rad)) {
+    if (two_dimensional_ || !std::isfinite(yaw_delta_rad) || !std::isfinite(pitch_delta_rad)) {
         return;
     }
     yaw_rad_ = std::remainder(yaw_rad_ + yaw_delta_rad, 2.0 * std::numbers::pi);
     pitch_rad_ = std::clamp(pitch_rad_ + pitch_delta_rad, -half_pi + 1.0e-4, half_pi - 1.0e-4);
+}
+
+void Camera::setTwoDimensional(bool enabled) noexcept {
+    if (enabled == two_dimensional_)
+        return;
+    two_dimensional_ = enabled;
+    if (enabled) {
+        saved_yaw_rad_ = yaw_rad_;
+        saved_pitch_rad_ = pitch_rad_;
+        yaw_rad_ = 0.0;
+        pitch_rad_ = half_pi - 1.0e-8;
+        return;
+    }
+    yaw_rad_ = saved_yaw_rad_;
+    pitch_rad_ = saved_pitch_rad_;
 }
 
 void Camera::pan(double horizontal_m, double vertical_m) noexcept {
@@ -69,6 +84,9 @@ void Camera::reset() noexcept {
     distance_m_ = 10.0;
     yaw_rad_ = 0.65;
     pitch_rad_ = 0.65;
+    saved_yaw_rad_ = yaw_rad_;
+    saved_pitch_rad_ = pitch_rad_;
+    two_dimensional_ = false;
 }
 
 math::Vec3d Camera::positionWorld() const noexcept {
@@ -87,6 +105,12 @@ Ray Camera::rayFromNdc(double x_ndc, double y_ndc, double aspect_ratio) const {
     const auto right = math::cross(direction, {0.0, 1.0, 0.0}).normalized();
     const auto up = math::cross(right, direction).normalized();
     const double tangent = std::tan(vertical_fov_rad_ * 0.5);
+    if (two_dimensional_) {
+        const double half_height_m = distance_m_ * tangent;
+        return {.origin = positionWorld() + right * (x_ndc * aspect_ratio * half_height_m) +
+                          up * (y_ndc * half_height_m),
+                .direction = direction};
+    }
     return {.origin = positionWorld(),
             .direction =
                 (direction + right * (x_ndc * aspect_ratio * tangent) + up * (y_ndc * tangent))
@@ -125,6 +149,17 @@ Mat4f Camera::viewProjection(double aspect_ratio, double meters_to_render_units)
     const double near_plane = std::max(rendered_distance * 1.0e-6, 1.0e-30);
     const double far_plane = std::max(rendered_distance * 1.0e6, near_plane * 10.0);
     const double scale = 1.0 / std::tan(vertical_fov_rad_ * 0.5);
+    if (two_dimensional_) {
+        const double half_height = rendered_distance / scale;
+        const double half_width = half_height * aspect_ratio;
+        Mat4f orthographic{};
+        orthographic[0] = static_cast<float>(1.0 / half_width);
+        orthographic[5] = static_cast<float>(1.0 / half_height);
+        orthographic[10] = static_cast<float>(-2.0 / (far_plane - near_plane));
+        orthographic[14] = static_cast<float>(-(far_plane + near_plane) / (far_plane - near_plane));
+        orthographic[15] = 1.0F;
+        return multiply(orthographic, view);
+    }
     Mat4f projection{};
     projection[0] = static_cast<float>(scale / aspect_ratio);
     projection[5] = static_cast<float>(scale);

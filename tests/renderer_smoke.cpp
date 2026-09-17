@@ -48,6 +48,14 @@ int main() {
     if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 6;
     renderer.present();
+    camera.setTwoDimensional(true);
+    local_settings.field_visualization.planar_2d = true;
+    local_settings.field_visualization.field = aetherion::renderer::ObservedField::electric;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 9;
+    renderer.present();
+    camera.setTwoDimensional(false);
+    local_settings.field_visualization.planar_2d = false;
     electromagnetic.magnetic_enabled = true;
     electromagnetic.analytic_sources.push_back({.magnetic_T = {0.0, 0.0, 1.0}});
     local_settings.field_visualization.field = aetherion::renderer::ObservedField::magnetic;
