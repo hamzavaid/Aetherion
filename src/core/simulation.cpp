@@ -9,7 +9,7 @@ namespace aetherion::core {
 
 Simulation::Simulation(Scene& scene, SimulationConfig config)
     : scene_(scene), config_(config), electrostatics_(electromagnetic_settings_),
-      field_provider_(scene_, electromagnetic_settings_) {
+      lorentz_(electromagnetic_settings_), field_provider_(scene_, electromagnetic_settings_) {
     if (!std::isfinite(config.physics_dt_s) || config.physics_dt_s <= 0.0) {
         throw std::invalid_argument("simulation timestep must be finite and positive in s");
     }
@@ -17,7 +17,7 @@ Simulation::Simulation(Scene& scene, SimulationConfig config)
 }
 
 Status Simulation::step() {
-    const physics::AccelerationFunction evaluate = [this](Scene& evaluated_scene) {
+    const physics::AccelerationFunction evaluate_nonmagnetic = [this](Scene& evaluated_scene) {
         for (auto& body : evaluated_scene.bodies())
             body.state.acceleration_mps2 = {};
         if (gravity_enabled_) {
@@ -30,7 +30,18 @@ Status Simulation::step() {
             if (!status)
                 return status;
         }
+        const auto lorentz_status = lorentz_.accumulateAccelerations(
+            evaluated_scene, time_s_, electromagnetic_settings_.electrostatics_enabled, false);
+        if (!lorentz_status)
+            return lorentz_status;
         return success();
+    };
+    const physics::AccelerationFunction evaluate = [this, &evaluate_nonmagnetic](Scene& evaluated) {
+        const auto status = evaluate_nonmagnetic(evaluated);
+        if (!status)
+            return status;
+        return lorentz_.accumulateAccelerations(evaluated, time_s_, false,
+                                                electromagnetic_settings_.magnetic_enabled);
     };
     Status status = success();
     switch (config_.integrator) {
@@ -46,6 +57,23 @@ Status Simulation::step() {
     case physics::IntegratorKind::rk4:
         status = rk4_.step(scene_, config_.physics_dt_s, evaluate);
         break;
+    case physics::IntegratorKind::boris: {
+        const physics::MagneticFieldFunction magnetic =
+            [this](const math::Vec3d& position_m) -> Result<math::Vec3d> {
+            if (!electromagnetic_settings_.magnetic_enabled)
+                return math::Vec3d{};
+            const auto sample =
+                physics::em::sampleAnalyticField(electromagnetic_settings_, position_m, time_s_);
+            if (!sample.valid)
+                return Error{ErrorCode::numerical_failure,
+                             "Boris magnetic sample entered a source singularity"};
+            return sample.magnetic_T;
+        };
+        status = boris_.step(scene_, config_.physics_dt_s, evaluate_nonmagnetic, magnetic);
+        if (status)
+            status = evaluate(scene_);
+        break;
+    }
     }
     if (!status) {
         return status;
@@ -61,6 +89,7 @@ void Simulation::setElectromagneticSettings(const physics::em::ElectromagneticSe
         throw std::invalid_argument(status.error().message);
     electromagnetic_settings_ = settings;
     electrostatics_.setSettings(settings);
+    lorentz_.setSettings(settings);
 }
 
 void Simulation::setPhysicsDt(double physics_dt_s) {

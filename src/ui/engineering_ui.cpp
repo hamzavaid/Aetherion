@@ -7,6 +7,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include <algorithm>
 #include <array>
 #include <cfloat>
 #include <cstdio>
@@ -14,6 +15,8 @@
 #include <utility>
 #include <vector>
 
+#include "aetherion/physics/em/electrostatics.hpp"
+#include "aetherion/physics/em/lorentz.hpp"
 #include "aetherion/physics/stability_analyzer.hpp"
 #include "aetherion/presets/em_presets.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
@@ -196,6 +199,12 @@ void EngineeringUi::drawInspector(core::SimulationController& controller,
         controller.commands().enqueue(
             core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
     }
+    bool magnetic = interactions.contains(core::Interaction::magnetic);
+    if (ImGui::Checkbox("Magnetic interaction", &magnetic)) {
+        interactions.set(core::Interaction::magnetic, magnetic);
+        controller.commands().enqueue(
+            core::UpdateBodyCommand{body->id, core::BodyPatch{.interactions = interactions}});
+    }
     if (ImGui::Button("Focus Camera"))
         camera.focus(body->state.position_m, body->radius_m);
     ImGui::End();
@@ -290,14 +299,115 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         electromagnetic.electrostatics_enabled = electrostatics;
         controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     }
+    bool magnetic = electromagnetic.magnetic_enabled;
+    if (ImGui::Checkbox("Magnetic dynamics", &magnetic)) {
+        electromagnetic.magnetic_enabled = magnetic;
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
+    }
+    auto uniform_source =
+        std::find_if(electromagnetic.analytic_sources.begin(),
+                     electromagnetic.analytic_sources.end(), [](const auto& source) {
+                         return source.kind == physics::em::AnalyticFieldSourceKind::uniform;
+                     });
+    physics::em::AnalyticFieldSource uniform;
+    if (uniform_source != electromagnetic.analytic_sources.end())
+        uniform = *uniform_source;
+    std::array<double, 3> uniform_e = {uniform.electric_Vpm.x, uniform.electric_Vpm.y,
+                                       uniform.electric_Vpm.z};
+    std::array<double, 3> uniform_b = {uniform.magnetic_T.x, uniform.magnetic_T.y,
+                                       uniform.magnetic_T.z};
+    const bool electric_changed =
+        ImGui::InputScalarN("Uniform E (V/m)", ImGuiDataType_Double, uniform_e.data(), 3);
+    const bool magnetic_changed =
+        ImGui::InputScalarN("Uniform B (T)", ImGuiDataType_Double, uniform_b.data(), 3);
+    if (electric_changed || magnetic_changed) {
+        uniform.electric_Vpm = {uniform_e[0], uniform_e[1], uniform_e[2]};
+        uniform.magnetic_T = {uniform_b[0], uniform_b[1], uniform_b[2]};
+        if (uniform_source == electromagnetic.analytic_sources.end())
+            electromagnetic.analytic_sources.push_back(uniform);
+        else
+            *uniform_source = uniform;
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
+    }
+    ImGui::SeparatorText("Analytic Field Sources");
+    if (ImGui::SmallButton("Add uniform source")) {
+        electromagnetic.analytic_sources.push_back({});
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Add magnetic dipole")) {
+        electromagnetic.analytic_sources.push_back(
+            {.kind = physics::em::AnalyticFieldSourceKind::magnetic_dipole,
+             .magnetic_dipole_moment_Am2 = {0.0, 0.0, 1.0}});
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
+    }
+    bool sources_changed = false;
+    int source_to_remove = -1;
+    for (std::size_t index = 0; index < electromagnetic.analytic_sources.size(); ++index) {
+        auto& source = electromagnetic.analytic_sources[index];
+        ImGui::PushID(static_cast<int>(index));
+        if (ImGui::TreeNode("Source", "Source %zu", index + 1U)) {
+            constexpr const char* source_kinds[] = {"Uniform", "Magnetic dipole"};
+            int kind = static_cast<int>(source.kind);
+            if (ImGui::Combo("Kind", &kind, source_kinds, 2)) {
+                source.kind = static_cast<physics::em::AnalyticFieldSourceKind>(kind);
+                sources_changed = true;
+            }
+            std::array<double, 3> source_position = {source.position_m.x, source.position_m.y,
+                                                     source.position_m.z};
+            if (ImGui::InputScalarN("Position (m)", ImGuiDataType_Double, source_position.data(),
+                                    3)) {
+                source.position_m = {source_position[0], source_position[1], source_position[2]};
+                sources_changed = true;
+            }
+            if (source.kind == physics::em::AnalyticFieldSourceKind::uniform) {
+                std::array<double, 3> electric = {source.electric_Vpm.x, source.electric_Vpm.y,
+                                                  source.electric_Vpm.z};
+                std::array<double, 3> magnetic_field = {source.magnetic_T.x, source.magnetic_T.y,
+                                                        source.magnetic_T.z};
+                if (ImGui::InputScalarN("E (V/m)", ImGuiDataType_Double, electric.data(), 3)) {
+                    source.electric_Vpm = {electric[0], electric[1], electric[2]};
+                    sources_changed = true;
+                }
+                if (ImGui::InputScalarN("B (T)", ImGuiDataType_Double, magnetic_field.data(), 3)) {
+                    source.magnetic_T = {magnetic_field[0], magnetic_field[1], magnetic_field[2]};
+                    sources_changed = true;
+                }
+            } else {
+                std::array<double, 3> moment = {source.magnetic_dipole_moment_Am2.x,
+                                                source.magnetic_dipole_moment_Am2.y,
+                                                source.magnetic_dipole_moment_Am2.z};
+                if (ImGui::InputScalarN("Dipole moment (A m^2)", ImGuiDataType_Double,
+                                        moment.data(), 3)) {
+                    source.magnetic_dipole_moment_Am2 = {moment[0], moment[1], moment[2]};
+                    sources_changed = true;
+                }
+                if (ImGui::InputDouble("Singularity radius (m)", &source.singularity_radius_m, 0.0,
+                                       0.0, "%.6g"))
+                    sources_changed = true;
+            }
+            if (ImGui::SmallButton("Remove source"))
+                source_to_remove = static_cast<int>(index);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (source_to_remove >= 0) {
+        electromagnetic.analytic_sources.erase(electromagnetic.analytic_sources.begin() +
+                                               source_to_remove);
+        sources_changed = true;
+    }
+    if (sources_changed)
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     double electric_guard_m = electromagnetic.minimum_separation_m;
     if (ImGui::InputDouble("EM guard radius (m)", &electric_guard_m, 0.0, 0.0, "%.6g")) {
         electromagnetic.minimum_separation_m = electric_guard_m;
         controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     }
-    constexpr const char* integrator_names[] = {"Semi-Implicit Euler", "Velocity Verlet", "RK4"};
+    constexpr const char* integrator_names[] = {"Semi-Implicit Euler", "Velocity Verlet", "RK4",
+                                                "Boris"};
     int integrator = static_cast<int>(controller.settings().integrator);
-    if (ImGui::Combo("Integrator", &integrator, integrator_names, 3)) {
+    if (ImGui::Combo("Integrator", &integrator, integrator_names, 4)) {
         controller.commands().enqueue(
             core::SetIntegratorCommand{static_cast<physics::IntegratorKind>(integrator)});
     }
@@ -372,6 +482,22 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         ImGui::Checkbox("Trace forward", &field.lines.trace_forward);
         ImGui::SameLine();
         ImGui::Checkbox("Trace backward", &field.lines.trace_backward);
+        if (ImGui::SmallButton("Add seed at region center"))
+            field.lines.custom_seeds_m.push_back(field.region.center_m);
+        int seed_to_remove = -1;
+        for (std::size_t index = 0; index < field.lines.custom_seeds_m.size(); ++index) {
+            auto& seed = field.lines.custom_seeds_m[index];
+            std::array<double, 3> value = {seed.x, seed.y, seed.z};
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::InputScalarN("Custom seed (m)", ImGuiDataType_Double, value.data(), 3))
+                seed = {value[0], value[1], value[2]};
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Remove"))
+                seed_to_remove = static_cast<int>(index);
+            ImGui::PopID();
+        }
+        if (seed_to_remove >= 0)
+            field.lines.custom_seeds_m.erase(field.lines.custom_seeds_m.begin() + seed_to_remove);
     }
     ImGui::SeparatorText("Electrostatic Presets");
     const auto load_preset = [&](presets::ElectromagneticPreset preset) {
@@ -388,6 +514,20 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SameLine();
     if (ImGui::Button("Electric dipole"))
         load_preset(presets::makeElectricDipolePreset());
+    ImGui::SeparatorText("Magnetic Presets");
+    if (ImGui::Button("Uniform-B gyro"))
+        load_preset(presets::makeUniformMagneticGyroPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Helical motion"))
+        load_preset(presets::makeHelicalMagneticPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Crossed E/B"))
+        load_preset(presets::makeCrossedFieldsPreset());
+    if (ImGui::Button("Magnetic vectors"))
+        load_preset(presets::makeMagneticVectorPreset());
+    ImGui::SameLine();
+    if (ImGui::Button("Magnetic field lines"))
+        load_preset(presets::makeMagneticFieldLinesPreset());
     ImGui::End();
 }
 
@@ -396,6 +536,42 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
     ImGui::Text("Simulation time: %.9g s", controller.simulationTimeSeconds());
     ImGui::Text("Bodies: %zu", controller.scene().size());
     ImGui::Text("Pending commands: %zu", controller.commands().pendingCount());
+    if (selected_) {
+        if (const auto* body = controller.scene().find(*selected_)) {
+            const auto field = physics::em::sampleAnalyticField(
+                controller.settings().electromagnetism, body->state.position_m,
+                controller.simulationTimeSeconds());
+            ImGui::Text("Selected speed: %.9g m/s", body->state.velocity_mps.norm());
+            ImGui::Text("Selected kinetic energy: %.9g J",
+                        0.5 * body->mass_kg * body->state.velocity_mps.squaredNorm());
+            if (field.valid) {
+                const auto force =
+                    physics::em::lorentzForce(body->charge_C, body->state.velocity_mps, field);
+                ImGui::Text("|E|: %.9g V/m, |B|: %.9g T", field.electric_Vpm.norm(),
+                            field.magnetic_T.norm());
+                if (force) {
+                    ImGui::Text("Electric force: [%.5g, %.5g, %.5g] N", force.value().electric_N.x,
+                                force.value().electric_N.y, force.value().electric_N.z);
+                    ImGui::Text("Magnetic force: [%.5g, %.5g, %.5g] N", force.value().magnetic_N.x,
+                                force.value().magnetic_N.y, force.value().magnetic_N.z);
+                }
+                const auto gyro = physics::em::gyroDiagnostics(
+                    body->mass_kg, body->charge_C, body->state.velocity_mps, field.magnetic_T);
+                if (gyro) {
+                    ImGui::Text("Gyro radius: %.9g m", gyro.value().radius_m);
+                    ImGui::Text("Gyro omega/period: %.9g rad/s / %.9g s",
+                                gyro.value().angular_frequency_rad_ps, gyro.value().period_s);
+                    const double resolution =
+                        controller.settings().physics_dt_s / gyro.value().period_s;
+                    if (resolution > 0.02) {
+                        const ImVec4 color = resolution > 0.1 ? ImVec4{1.0F, 0.25F, 0.2F, 1.0F}
+                                                              : ImVec4{1.0F, 0.72F, 0.2F, 1.0F};
+                        ImGui::TextColored(color, "Gyro timestep warning: dt/T = %.3g", resolution);
+                    }
+                }
+            }
+        }
+    }
     if (!controller.telemetry().samples().empty()) {
         const auto& sample = controller.telemetry().samples().back();
         ImGui::Text("Total energy: %.9g J", sample.total_energy_J);
@@ -403,6 +579,7 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
                     sample.linear_momentum_kg_mps.y, sample.linear_momentum_kg_mps.z);
         ImGui::Text("Relative energy error: %.6g", sample.relative_energy_error);
         ImGui::Text("Momentum error: %.6g kg m/s", sample.momentum_error_kg_mps);
+        ImGui::Text("Maximum speed drift: %.6g m/s", sample.maximum_speed_drift_mps);
     }
     const auto warnings =
         physics::analyzeTimestep(controller.scene(), controller.settings().physics_dt_s);
@@ -443,8 +620,8 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
 void EngineeringUi::drawPlots(const core::SimulationController& controller) {
     ImGui::Begin("Plots");
     constexpr const char* metrics[] = {"Relative energy error", "Momentum error (kg m/s)",
-                                       "Total energy (J)"};
-    ImGui::Combo("Metric", &plot_metric_, metrics, 3);
+                                       "Total energy (J)", "Maximum speed drift (m/s)"};
+    ImGui::Combo("Metric", &plot_metric_, metrics, 4);
     const auto& samples = controller.telemetry().samples();
     std::vector<float> values;
     values.reserve(samples.size());
@@ -454,6 +631,8 @@ void EngineeringUi::drawPlots(const core::SimulationController& controller) {
             value = sample.momentum_error_kg_mps;
         if (plot_metric_ == 2)
             value = sample.total_energy_J;
+        if (plot_metric_ == 3)
+            value = sample.maximum_speed_drift_mps;
         values.push_back(static_cast<float>(value));
     }
     if (!values.empty()) {

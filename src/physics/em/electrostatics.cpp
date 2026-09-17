@@ -110,29 +110,12 @@ ElectromagneticFieldProvider::ElectromagneticFieldProvider(
     const core::Scene& scene, const ElectromagneticSettings& settings) noexcept
     : scene_(scene), settings_(settings) {}
 
-fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& position_m,
-                                                         double time_s) const {
+fields::FieldSample sampleAnalyticField(const ElectromagneticSettings& settings,
+                                        const math::Vec3d& position_m, double time_s) {
     if (!position_m.isFinite() || !std::isfinite(time_s))
         return {.valid = false};
     fields::FieldSample result;
-    const double guard_squared = settings_.minimum_separation_m * settings_.minimum_separation_m;
-    const double softening_squared = settings_.softening_m * settings_.softening_m;
-    for (const auto& source : scene_.bodies()) {
-        if (source.charge_C == 0.0 ||
-            !source.interactions.contains(core::Interaction::electrostatic)) {
-            continue;
-        }
-        const auto displacement_m = position_m - source.state.position_m;
-        const double physical_distance_squared = displacement_m.squaredNorm();
-        if (physical_distance_squared <= guard_squared)
-            return {.valid = false};
-        const double distance_squared = physical_distance_squared + softening_squared;
-        const double inverse_distance_cubed =
-            1.0 / (distance_squared * std::sqrt(distance_squared));
-        result.electric_Vpm +=
-            constants::coulomb_constant * source.charge_C * displacement_m * inverse_distance_cubed;
-    }
-    for (const auto& source : settings_.analytic_sources) {
+    for (const auto& source : settings.analytic_sources) {
         if (source.kind == AnalyticFieldSourceKind::uniform) {
             result.electric_Vpm += source.electric_Vpm;
             result.magnetic_T += source.magnetic_T;
@@ -150,6 +133,33 @@ fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& posi
             coefficient *
             (3.0 * math::dot(source.magnetic_dipole_moment_Am2, direction) * direction -
              source.magnetic_dipole_moment_Am2);
+    }
+    if (!result.electric_Vpm.isFinite() || !result.magnetic_T.isFinite())
+        return {.valid = false};
+    return result;
+}
+
+fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& position_m,
+                                                         double time_s) const {
+    auto result = sampleAnalyticField(settings_, position_m, time_s);
+    if (!result.valid)
+        return result;
+    const double guard_squared = settings_.minimum_separation_m * settings_.minimum_separation_m;
+    const double softening_squared = settings_.softening_m * settings_.softening_m;
+    for (const auto& source : scene_.bodies()) {
+        if (source.charge_C == 0.0 ||
+            !source.interactions.contains(core::Interaction::electrostatic)) {
+            continue;
+        }
+        const auto displacement_m = position_m - source.state.position_m;
+        const double physical_distance_squared = displacement_m.squaredNorm();
+        if (physical_distance_squared <= guard_squared)
+            return {.valid = false};
+        const double distance_squared = physical_distance_squared + softening_squared;
+        const double inverse_distance_cubed =
+            1.0 / (distance_squared * std::sqrt(distance_squared));
+        result.electric_Vpm +=
+            constants::coulomb_constant * source.charge_C * displacement_m * inverse_distance_cubed;
     }
     if (!result.electric_Vpm.isFinite() || !result.magnetic_T.isFinite())
         return {.valid = false};

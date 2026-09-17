@@ -48,6 +48,18 @@ int main() {
     if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 6;
     renderer.present();
+    electromagnetic.magnetic_enabled = true;
+    electromagnetic.analytic_sources.push_back({.magnetic_T = {0.0, 0.0, 1.0}});
+    local_settings.field_visualization.field = aetherion::renderer::ObservedField::magnetic;
+    local_settings.field_visualization.mode =
+        aetherion::renderer::FieldDisplayMode::observed_vectors;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 7;
+    renderer.present();
+    local_settings.field_visualization.mode = aetherion::renderer::FieldDisplayMode::field_lines;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 8;
+    renderer.present();
 
     aetherion::core::Scene astronomical_scene;
     if (!astronomical_scene.createBody({.name = "astronomical",

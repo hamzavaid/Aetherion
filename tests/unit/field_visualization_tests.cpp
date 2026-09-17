@@ -51,6 +51,23 @@ TEST(FieldLines, UniformFieldHasCorrectDirectionAndRegionTermination) {
     EXPECT_NEAR(lines[0].points_m.back().y, 0.0, 1.0e-14);
 }
 
+TEST(FieldLines, UniformMagneticFieldTracesBothDirectionsWithoutMonopoleTermination) {
+    UniformProvider provider;
+    renderer::FieldVisualizationSettings settings;
+    settings.field = renderer::ObservedField::magnetic;
+    settings.region.half_extent_m = {1.0, 1.0, 1.0};
+    settings.lines.step_size_m = 0.1;
+    settings.lines.maximum_steps = 100;
+    settings.lines.maximum_total_steps = 200;
+    settings.lines.maximum_length_m = 10.0;
+    const auto lines = renderer::traceFieldLines(provider, settings, {{{0.0, 0.0, 0.0}}}, 0.0);
+    ASSERT_EQ(lines.size(), 1U);
+    ASSERT_GT(lines[0].points_m.size(), 10U);
+    EXPECT_LT(lines[0].points_m.front().z, -0.8);
+    EXPECT_GT(lines[0].points_m.back().z, 0.8);
+    EXPECT_NEAR(lines[0].points_m.back().x, 0.0, 1.0e-14);
+}
+
 TEST(FieldLines, PositivePointChargeLinesDepartAndTerminateBeforeSingularity) {
     core::Scene scene;
     ASSERT_TRUE(

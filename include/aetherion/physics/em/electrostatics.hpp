@@ -44,5 +44,13 @@ class ElectromagneticFieldProvider final : public fields::IFieldProvider {
 };
 
 [[nodiscard]] core::Status validateElectromagneticSettings(const ElectromagneticSettings& settings);
+/// Samples configured static analytic sources without particle-generated Coulomb fields.
+///
+/// Uniform source components are SI V/m and T. A magnetic dipole uses
+/// B=mu0/(4*pi*r^3)*(3(m dot r_hat)r_hat-m), with moment in A m^2. Samples inside a source's
+/// singularity radius are marked invalid; time is accepted for the common provider contract but
+/// the Phase 6 sources are time independent.
+[[nodiscard]] fields::FieldSample sampleAnalyticField(const ElectromagneticSettings& settings,
+                                                      const math::Vec3d& position_m, double time_s);
 
 } // namespace aetherion::physics::em

@@ -8,7 +8,7 @@
 
 namespace aetherion::physics {
 
-enum class IntegratorKind { semi_implicit_euler, velocity_verlet, rk4 };
+enum class IntegratorKind { semi_implicit_euler, velocity_verlet, rk4, boris };
 
 [[nodiscard]] constexpr std::string_view integratorName(IntegratorKind kind) noexcept {
     switch (kind) {
@@ -18,6 +18,8 @@ enum class IntegratorKind { semi_implicit_euler, velocity_verlet, rk4 };
         return "Velocity Verlet";
     case IntegratorKind::rk4:
         return "RK4";
+    case IntegratorKind::boris:
+        return "Boris";
     }
     return "Unknown";
 }

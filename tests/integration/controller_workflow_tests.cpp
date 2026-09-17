@@ -133,3 +133,25 @@ TEST(ControllerWorkflow, QueuedElectrostaticsAffectsSubsequentPhysicsStep) {
     EXPECT_LT(controller.scene().bodies()[0].state.velocity_mps.x, 0.0);
     EXPECT_GT(controller.scene().bodies()[1].state.velocity_mps.x, 0.0);
 }
+
+TEST(ControllerWorkflow, QueuedMagneticSourceAndBorisSelectionAffectNextStep) {
+    Scene scene;
+    ASSERT_TRUE(scene.createBody(Body{.name = "particle",
+                                      .mass_kg = 1.0,
+                                      .charge_C = 1.0,
+                                      .radius_m = 0.1,
+                                      .state = {.velocity_mps = {1.0, 0.0, 0.0}}}));
+    SimulationController controller(std::move(scene),
+                                    {.physics_dt_s = 0.01, .gravity_enabled = false});
+    auto electromagnetic = controller.settings().electromagnetism;
+    electromagnetic.magnetic_enabled = true;
+    electromagnetic.analytic_sources.push_back({.magnetic_T = {0.0, 0.0, 1.0}});
+    controller.commands().enqueue(
+        aetherion::core::SetElectromagneticSettingsCommand{electromagnetic});
+    controller.commands().enqueue(
+        aetherion::core::SetIntegratorCommand{aetherion::physics::IntegratorKind::boris});
+    ASSERT_TRUE(controller.singleStep());
+    EXPECT_EQ(controller.settings().integrator, aetherion::physics::IntegratorKind::boris);
+    EXPECT_LT(controller.scene().bodies()[0].state.velocity_mps.y, 0.0);
+    EXPECT_NEAR(controller.scene().bodies()[0].state.velocity_mps.norm(), 1.0, 1.0e-14);
+}

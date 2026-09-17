@@ -39,4 +39,5 @@ TEST(Telemetry, ReportsEnergyAndMomentumErrorsAgainstFirstSample) {
     const auto changed = recorder.sample(scene, 1.0);
     EXPECT_NEAR(changed.relative_energy_error, 7.0 / 9.0, 1.0e-14);
     EXPECT_DOUBLE_EQ(changed.momentum_error_kg_mps, 2.0);
+    EXPECT_DOUBLE_EQ(changed.maximum_speed_drift_mps, 1.0);
 }

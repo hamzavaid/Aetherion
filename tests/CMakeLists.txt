@@ -8,6 +8,9 @@ add_executable(aetherion_tests
   unit/simulation_clock_tests.cpp
   unit/gravity_tests.cpp
   unit/integrator_tests.cpp
+  unit/boris_tests.cpp
+  unit/lorentz_tests.cpp
+  unit/magnetic_field_tests.cpp
   unit/input_routing_tests.cpp
   regression/integrator_comparison_tests.cpp
   unit/camera_tests.cpp
@@ -21,6 +24,8 @@ add_executable(aetherion_tests
   unit/semi_implicit_euler_tests.cpp
   regression/earth_orbit_tests.cpp
   regression/electrostatic_presets_tests.cpp
+  regression/magnetic_presets_tests.cpp
+  regression/boris_gyro_tests.cpp
   unit/telemetry_tests.cpp
   unit/stability_tests.cpp
   unit/vec3d_tests.cpp

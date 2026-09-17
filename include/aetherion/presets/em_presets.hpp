@@ -15,5 +15,10 @@ struct ElectromagneticPreset {
 [[nodiscard]] ElectromagneticPreset makeLikeChargesPreset();
 [[nodiscard]] ElectromagneticPreset makeOppositeChargesPreset();
 [[nodiscard]] ElectromagneticPreset makeElectricDipolePreset();
+[[nodiscard]] ElectromagneticPreset makeUniformMagneticGyroPreset();
+[[nodiscard]] ElectromagneticPreset makeHelicalMagneticPreset();
+[[nodiscard]] ElectromagneticPreset makeCrossedFieldsPreset();
+[[nodiscard]] ElectromagneticPreset makeMagneticVectorPreset();
+[[nodiscard]] ElectromagneticPreset makeMagneticFieldLinesPreset();
 
 } // namespace aetherion::presets

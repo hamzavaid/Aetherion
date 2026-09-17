@@ -18,6 +18,8 @@ struct TelemetrySample {
     double relative_energy_error{};
     double momentum_error_kg_mps{};
     double relative_angular_momentum_error{};
+    /// Maximum per-body absolute speed change from the first sample, in m/s.
+    double maximum_speed_drift_mps{};
 };
 
 /// Bounded chronological mechanical diagnostics sampled from an inertial SI scene.
@@ -35,6 +37,7 @@ class TelemetryRecorder final {
     double baseline_energy_J_{};
     math::Vec3d baseline_momentum_kg_mps_;
     math::Vec3d baseline_angular_momentum_kg_m2_ps_;
+    std::vector<double> baseline_speeds_mps_;
 };
 
 } // namespace aetherion::core

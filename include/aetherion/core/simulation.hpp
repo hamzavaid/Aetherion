@@ -4,7 +4,9 @@
 #include "aetherion/core/scene.hpp"
 #include "aetherion/core/telemetry.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
+#include "aetherion/physics/em/lorentz.hpp"
 #include "aetherion/physics/gravity/gravity_solver.hpp"
+#include "aetherion/physics/integrators/boris.hpp"
 #include "aetherion/physics/integrators/integrator.hpp"
 #include "aetherion/physics/integrators/rk4.hpp"
 #include "aetherion/physics/integrators/velocity_verlet.hpp"
@@ -43,7 +45,9 @@ class Simulation final {
     physics::GravitySolver gravity_;
     physics::em::ElectromagneticSettings electromagnetic_settings_;
     physics::em::ElectrostaticSolver electrostatics_;
+    physics::em::LorentzSolver lorentz_;
     physics::em::ElectromagneticFieldProvider field_provider_;
+    physics::BorisIntegrator boris_;
     physics::VelocityVerletIntegrator velocity_verlet_;
     physics::Rk4Integrator rk4_;
     TelemetryRecorder telemetry_;

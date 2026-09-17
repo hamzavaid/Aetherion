@@ -14,12 +14,19 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     original.runtime.physics_dt_s = 2.0e-6;
     original.runtime.gravity_enabled = false;
     original.runtime.electromagnetism.electrostatics_enabled = true;
+    original.runtime.electromagnetism.magnetic_enabled = true;
+    original.runtime.integrator = aetherion::physics::IntegratorKind::boris;
     original.runtime.electromagnetism.minimum_separation_m = 0.02;
     original.runtime.electromagnetism.analytic_sources.push_back(
         {.electric_Vpm = {1.0, 2.0, 3.0}, .magnetic_T = {0.0, 0.0, 0.4}});
+    original.runtime.electromagnetism.analytic_sources.push_back(
+        {.kind = aetherion::physics::em::AnalyticFieldSourceKind::magnetic_dipole,
+         .position_m = {5.0, 6.0, 7.0},
+         .magnetic_dipole_moment_Am2 = {0.0, 2.0, 0.0},
+         .singularity_radius_m = 0.3});
     auto& field = original.visualization.field_visualization;
     field.mode = aetherion::renderer::FieldDisplayMode::field_lines;
-    field.field = aetherion::renderer::ObservedField::electric;
+    field.field = aetherion::renderer::ObservedField::magnetic;
     field.region.center_m = {3.0, 2.0, 1.0};
     field.vectors.resolution = 7;
     field.lines.step_size_m = 0.03;
@@ -34,12 +41,23 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     EXPECT_EQ(body.name, "charged body");
     EXPECT_DOUBLE_EQ(body.charge_C, -3.0e-6);
     EXPECT_TRUE(decoded.value().runtime.electromagnetism.electrostatics_enabled);
+    EXPECT_TRUE(decoded.value().runtime.electromagnetism.magnetic_enabled);
+    EXPECT_EQ(decoded.value().runtime.integrator, aetherion::physics::IntegratorKind::boris);
     EXPECT_DOUBLE_EQ(decoded.value().runtime.electromagnetism.minimum_separation_m, 0.02);
-    ASSERT_EQ(decoded.value().runtime.electromagnetism.analytic_sources.size(), 1U);
+    ASSERT_EQ(decoded.value().runtime.electromagnetism.analytic_sources.size(), 2U);
     EXPECT_EQ(decoded.value().runtime.electromagnetism.analytic_sources[0].electric_Vpm,
               (aetherion::math::Vec3d{1.0, 2.0, 3.0}));
+    EXPECT_EQ(decoded.value().runtime.electromagnetism.analytic_sources[0].magnetic_T,
+              (aetherion::math::Vec3d{0.0, 0.0, 0.4}));
+    const auto& dipole = decoded.value().runtime.electromagnetism.analytic_sources[1];
+    EXPECT_EQ(dipole.kind, aetherion::physics::em::AnalyticFieldSourceKind::magnetic_dipole);
+    EXPECT_EQ(dipole.position_m, (aetherion::math::Vec3d{5.0, 6.0, 7.0}));
+    EXPECT_EQ(dipole.magnetic_dipole_moment_Am2, (aetherion::math::Vec3d{0.0, 2.0, 0.0}));
+    EXPECT_DOUBLE_EQ(dipole.singularity_radius_m, 0.3);
     EXPECT_EQ(decoded.value().visualization.field_visualization.mode,
               aetherion::renderer::FieldDisplayMode::field_lines);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.field,
+              aetherion::renderer::ObservedField::magnetic);
     EXPECT_EQ(decoded.value().visualization.field_visualization.lines.custom_seeds_m.size(), 2U);
 }
 

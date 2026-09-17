@@ -31,8 +31,10 @@ add_library(aetherion_core
   src/math/vec3d.cpp
   src/physics/gravity/gravity_solver.cpp
   src/physics/em/electrostatics.cpp
+  src/physics/em/lorentz.cpp
   src/physics/integrator_comparison.cpp
   src/physics/integrators/rk4.cpp
+  src/physics/integrators/boris.cpp
   src/physics/integrators/semi_implicit_euler.cpp
   src/physics/integrators/velocity_verlet.cpp
   src/physics/stability_analyzer.cpp

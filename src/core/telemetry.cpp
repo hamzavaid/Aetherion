@@ -54,6 +54,10 @@ TelemetrySample TelemetryRecorder::sample(const Scene& scene, double time_s) {
         baseline_energy_J_ = output.total_energy_J;
         baseline_momentum_kg_mps_ = output.linear_momentum_kg_mps;
         baseline_angular_momentum_kg_m2_ps_ = output.angular_momentum_kg_m2_ps;
+        baseline_speeds_mps_.clear();
+        baseline_speeds_mps_.reserve(bodies.size());
+        for (const auto& body : bodies)
+            baseline_speeds_mps_.push_back(body.state.velocity_mps.norm());
     }
     const double energy_scale =
         std::max(std::abs(baseline_energy_J_), std::numeric_limits<double>::min());
@@ -66,6 +70,17 @@ TelemetrySample TelemetryRecorder::sample(const Scene& scene, double time_s) {
     output.relative_angular_momentum_error =
         (output.angular_momentum_kg_m2_ps - baseline_angular_momentum_kg_m2_ps_).norm() /
         angular_scale;
+    if (baseline_speeds_mps_.size() != bodies.size()) {
+        baseline_speeds_mps_.clear();
+        baseline_speeds_mps_.reserve(bodies.size());
+        for (const auto& body : bodies)
+            baseline_speeds_mps_.push_back(body.state.velocity_mps.norm());
+    }
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        output.maximum_speed_drift_mps = std::max(
+            output.maximum_speed_drift_mps,
+            std::abs(bodies[index].state.velocity_mps.norm() - baseline_speeds_mps_[index]));
+    }
     if (samples_.size() == capacity_) {
         samples_.erase(samples_.begin());
     }
@@ -79,6 +94,7 @@ void TelemetryRecorder::clear() noexcept {
     baseline_energy_J_ = 0.0;
     baseline_momentum_kg_mps_ = {};
     baseline_angular_momentum_kg_m2_ps_ = {};
+    baseline_speeds_mps_.clear();
 }
 
 } // namespace aetherion::core
