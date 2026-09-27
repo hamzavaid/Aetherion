@@ -96,6 +96,7 @@ void EngineeringUi::drawDockSpace() {
             ImGui::DockBuilderSplitNode(center, ImGuiDir_Down, 0.24F, nullptr, &center);
         ImGui::DockBuilderDockWindow("Scene Hierarchy", left);
         ImGui::DockBuilderDockWindow("Inspector", right);
+        ImGui::DockBuilderDockWindow("Move Selected", right);
         ImGui::DockBuilderDockWindow("Simulation Controls", bottom);
         ImGui::DockBuilderDockWindow("Save History", bottom);
         ImGui::DockBuilderDockWindow("Diagnostics", bottom);
@@ -113,6 +114,8 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller,
     for (const auto& body : controller.scene().bodies()) {
         const bool selected = selected_ && *selected_ == body.id;
         if (ImGui::Selectable(body.name.c_str(), selected)) {
+            if (selected_ != body.id)
+                position_edits_.clear();
             selected_ = body.id;
             selected_probe_.reset();
         }
@@ -150,6 +153,8 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller,
             const auto& probe = settings.probes[index];
             ImGui::PushID(static_cast<int>(index));
             if (ImGui::Selectable(probe.name.c_str(), selected_probe_ == index)) {
+                if (selected_probe_ != index)
+                    position_edits_.clear();
                 selected_probe_ = index;
                 plot_probe_ = static_cast<int>(index);
                 selected_.reset();
@@ -204,6 +209,10 @@ void EngineeringUi::drawInspector(core::SimulationController& controller, render
     std::array<double, 3> position = {body->state.position_m.x, body->state.position_m.y,
                                       body->state.position_m.z};
     if (ImGui::InputScalarN("Position (m)", ImGuiDataType_Double, position.data(), 3)) {
+        const math::Vec3d edited_position{position[0], position[1], position[2]};
+        static_cast<void>(
+            position_edits_.select({core::PositionTargetKind::body, body->id}, edited_position));
+        position_edits_.rebase(edited_position);
         controller.commands().enqueue(core::UpdateBodyCommand{
             body->id, core::BodyPatch{.position_m = {{position[0], position[1], position[2]}}}});
     }
@@ -274,17 +283,22 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                                            renderer::RenderSettings& render_settings) {
     ImGui::Begin("Simulation Controls");
     if (ImGui::Button(controller.isPlaying() ? "Pause" : "Play")) {
+        if (!controller.isPlaying())
+            position_edits_.clear();
         controller.setPlaying(!controller.isPlaying());
     }
     ImGui::SameLine();
-    if (ImGui::Button("Single Step"))
+    if (ImGui::Button("Single Step")) {
+        position_edits_.clear();
         static_cast<void>(controller.singleStep());
+    }
     ImGui::SameLine();
     if (ImGui::Button("Save"))
         static_cast<void>(controller.saveCheckpoint());
     ImGui::SameLine();
     if (ImGui::Button("Reset")) {
         controller.reset();
+        position_edits_.clear();
         scientific_history_.clear();
         if (selected_ && controller.scene().find(*selected_) == nullptr)
             selected_.reset();
@@ -309,6 +323,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                 controller.loadState(std::move(loaded.scene), std::move(loaded.runtime));
             if (status) {
                 render_settings = std::move(loaded.visualization);
+                position_edits_.clear();
                 selected_probe_.reset();
                 const auto bounds =
                     renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
@@ -659,6 +674,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera_tracker_.stop();
             selected_.reset();
             selected_probe_.reset();
+            position_edits_.clear();
             scientific_history_.clear();
         }
     };
@@ -689,6 +705,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera_tracker_.stop();
             selected_.reset();
             selected_probe_.reset();
+            position_edits_.clear();
             scientific_history_.clear();
         }
     };
@@ -729,6 +746,7 @@ void EngineeringUi::drawSaveHistory(core::SimulationController& controller) {
             ImGui::PushID(static_cast<int>(checkpoint->id));
             if (ImGui::SmallButton("Restore")) {
                 static_cast<void>(controller.restoreCheckpoint(checkpoint->id));
+                position_edits_.clear();
                 scientific_history_.clear();
                 if (selected_ && controller.scene().find(*selected_) == nullptr)
                     selected_.reset();
@@ -787,8 +805,12 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
                                               probe.position_m.z};
             if (ImGui::InputScalarN("Position (m)", ImGuiDataType_Double, position.data(), 3)) {
                 const math::Vec3d candidate{position[0], position[1], position[2]};
-                if (candidate.isFinite())
+                if (candidate.isFinite()) {
                     probe.position_m = candidate;
+                    static_cast<void>(position_edits_.select(
+                        {core::PositionTargetKind::probe, index}, candidate));
+                    position_edits_.rebase(candidate);
+                }
             }
             const auto observation = core::sampleProbe(controller.fieldProvider(), probe,
                                                        controller.simulationTimeSeconds());
@@ -812,6 +834,7 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
     }
     if (remove_index >= 0) {
         settings.probes.erase(settings.probes.begin() + remove_index);
+        position_edits_.clear();
         if (selected_probe_) {
             if (*selected_probe_ == static_cast<std::size_t>(remove_index))
                 selected_probe_.reset();
@@ -819,6 +842,116 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
                 --*selected_probe_;
         }
     }
+    ImGui::End();
+}
+
+void EngineeringUi::handleSceneAction(core::SimulationController& controller,
+                                      renderer::RenderSettings& settings, renderer::Camera& camera,
+                                      renderer::SceneActionKind action) {
+    std::optional<core::PositionTarget> target;
+    std::optional<math::Vec3d> observed_position_m;
+    if (selected_probe_ && *selected_probe_ < settings.probes.size()) {
+        target = {core::PositionTargetKind::probe, *selected_probe_};
+        observed_position_m = settings.probes[*selected_probe_].position_m;
+    } else if (selected_) {
+        if (const auto* body = controller.scene().find(*selected_)) {
+            target = {core::PositionTargetKind::body, *selected_};
+            observed_position_m = body->state.position_m;
+        }
+    }
+    if (!target || !observed_position_m)
+        return;
+    if (position_edits_.select(*target, *observed_position_m))
+        move_step_m_ = std::clamp(camera.distanceMeters() * 0.01, 1.0e-9, 1.0e14);
+    if (target->kind == core::PositionTargetKind::body && controller.isPlaying()) {
+        controller.setPlaying(false);
+        position_edits_.rebase(*observed_position_m);
+    }
+    bool changed = false;
+    if (action == renderer::SceneActionKind::undo)
+        changed = position_edits_.undo();
+    else if (action == renderer::SceneActionKind::reset_position)
+        changed = position_edits_.reset();
+    else if (const auto delta = renderer::sceneNudgeDelta(action, move_step_m_))
+        changed = position_edits_.nudge(*delta);
+    if (!changed || !position_edits_.current())
+        return;
+    if (target->kind == core::PositionTargetKind::body) {
+        controller.commands().enqueue(
+            core::UpdateBodyCommand{static_cast<core::EntityId>(target->id),
+                                    core::BodyPatch{.position_m = *position_edits_.current()}});
+    } else {
+        settings.probes[static_cast<std::size_t>(target->id)].position_m =
+            *position_edits_.current();
+    }
+}
+
+void EngineeringUi::drawMovementControls(core::SimulationController& controller,
+                                         renderer::RenderSettings& settings,
+                                         renderer::Camera& camera) {
+    ImGui::Begin("Move Selected");
+    std::optional<core::PositionTarget> target;
+    std::optional<math::Vec3d> position_m;
+    const char* name = nullptr;
+    if (selected_probe_ && *selected_probe_ < settings.probes.size()) {
+        const auto& probe = settings.probes[*selected_probe_];
+        target = {core::PositionTargetKind::probe, *selected_probe_};
+        position_m = probe.position_m;
+        name = probe.name.c_str();
+    } else if (selected_) {
+        if (const auto* body = controller.scene().find(*selected_)) {
+            target = {core::PositionTargetKind::body, *selected_};
+            position_m = body->state.position_m;
+            name = body->name.c_str();
+        }
+    }
+    if (!target || !position_m) {
+        ImGui::TextDisabled("Select a body or probe in the scene or hierarchy.");
+        ImGui::End();
+        return;
+    }
+    if (position_edits_.select(*target, *position_m))
+        move_step_m_ = std::clamp(camera.distanceMeters() * 0.01, 1.0e-9, 1.0e14);
+    if (target->kind == core::PositionTargetKind::body && controller.isPlaying())
+        position_edits_.rebase(*position_m);
+    ImGui::Text("Selected: %s", name);
+    const auto current = position_edits_.current().value_or(*position_m);
+    ImGui::Text("World position: [%.8g, %.8g, %.8g] m", current.x, current.y, current.z);
+    double step = move_step_m_;
+    if (ImGui::InputDouble("Move step (m)", &step, 0.0, 0.0, "%.8g") && std::isfinite(step) &&
+        step >= 1.0e-12 && step <= 1.0e14)
+        move_step_m_ = step;
+    if (ImGui::SmallButton("Step / 10"))
+        move_step_m_ = std::max(move_step_m_ / 10.0, 1.0e-12);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Step x 10"))
+        move_step_m_ = std::min(move_step_m_ * 10.0, 1.0e14);
+    ImGui::SameLine();
+    if (ImGui::SmallButton("1% of view"))
+        move_step_m_ = std::clamp(camera.distanceMeters() * 0.01, 1.0e-9, 1.0e14);
+    if (ImGui::Button("-X (A/Left)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_left);
+    ImGui::SameLine();
+    if (ImGui::Button("+X (D/Right)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_right);
+    if (ImGui::Button("-Z (W/Up)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_forward);
+    ImGui::SameLine();
+    if (ImGui::Button("+Z (S/Down)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_backward);
+    if (ImGui::Button("+Y (E/PgUp)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_up);
+    ImGui::SameLine();
+    if (ImGui::Button("-Y (Q/PgDn)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::move_down);
+    ImGui::BeginDisabled(!position_edits_.canUndo());
+    if (ImGui::Button("Undo move (Ctrl+Z)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::undo);
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Reset position (Home/Ctrl+R)"))
+        handleSceneAction(controller, settings, camera, renderer::SceneActionKind::reset_position);
+    ImGui::TextDisabled("World axes; hold movement keys to repeat. Body edits pause simulation.");
     ImGui::End();
 }
 
@@ -1030,6 +1163,7 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     if (!history_status)
         scientific_history_.clear();
     drawProbes(controller, render_settings, camera);
+    drawMovementControls(controller, render_settings, camera);
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;

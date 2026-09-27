@@ -3,6 +3,7 @@
 #include <memory>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/scene.hpp"
@@ -40,6 +41,9 @@ class OpenGlRenderer final {
     void setInputCapture(const InputCapture& capture) noexcept;
     /// Consumes a left-click made in the unobstructed scene viewport, if one is pending.
     [[nodiscard]] std::optional<ViewportClick> takeViewportClick() noexcept;
+    /// Consumes viewport-only shortcut events captured on press/repeat; UI-owned keyboard input
+    /// is never queued. Repeats are individually bounded so holding a movement key nudges.
+    [[nodiscard]] std::vector<SceneActionKind> takeSceneActions() noexcept;
     [[nodiscard]] bool shouldClose() const noexcept;
     void requestClose() noexcept;
     [[nodiscard]] void* nativeWindowHandle() noexcept;

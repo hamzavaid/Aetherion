@@ -42,3 +42,18 @@ TEST(Picking, UsesVisualizationRadiusForDirectSceneSelection) {
     ASSERT_TRUE(hit);
     EXPECT_EQ(hit->id, id.value());
 }
+
+TEST(Picking, SelectsVisibleProbeMarkerAndSkipsHiddenProbes) {
+    std::vector<aetherion::core::FieldProbe> probes = {
+        {.name = "near", .position_m = {0.0, 0.0, -10.0}},
+        {.name = "far", .position_m = {0.0, 0.0, -20.0}}};
+    const auto ray = Ray{.origin = {}, .direction = {0.0, 0.0, -1.0}};
+    const auto first = aetherion::renderer::pickProbe(probes, ray, 0.5);
+    ASSERT_TRUE(first);
+    EXPECT_EQ(first->index, 0U);
+    probes[0].visible = false;
+    const auto second = aetherion::renderer::pickProbe(probes, ray, 0.5);
+    ASSERT_TRUE(second);
+    EXPECT_EQ(second->index, 1U);
+    EXPECT_FALSE(aetherion::renderer::pickProbe(probes, ray, 0.0));
+}

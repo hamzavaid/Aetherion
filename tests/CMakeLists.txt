@@ -22,6 +22,7 @@ add_executable(aetherion_tests
   integration/controller_workflow_tests.cpp
   unit/mesh_tests.cpp
   unit/picking_tests.cpp
+  unit/position_edit_history_tests.cpp
   unit/render_data_tests.cpp
   unit/trail_history_tests.cpp
   unit/semi_implicit_euler_tests.cpp

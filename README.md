@@ -68,6 +68,16 @@ toggle its electric, magnetic, or gravity arrows. Magnitude planes render from e
 by default, follow the camera target and expand with zoom; turn off **Fit plane to camera view**
 to use an explicit sampling region.
 
+Select a body or probe in the viewport or hierarchy, then use **Move Selected** to set a movement
+step in meters. With the viewport owning keyboard input, `A`/`D` move along world X,
+`W`/`S` along -/+Z, and `E`/`Q`
+along +/-Y; arrow keys and Page Up/Down are alternatives. Holding a movement key repeats the
+step. **Undo move** or `Ctrl+Z` reverses manual movement one step at a time; **Reset position**,
+`Home`, or `Ctrl+R` returns to the position before the current manual-move sequence (and can itself
+be undone). `R` alone still resets the camera. Keyboard shortcuts are suspended while a menu or text
+field owns keyboard input. Moving a body pauses the simulation and applies its new position via
+the command queue; moving a probe changes visualization state only.
+
 Electrostatic presets, charge editing, interaction controls, observed electric-vector lattices, and
 RK4-traced electric field lines are available from Simulation Controls. Field sampling and tracing
 operate through a physics-provider interface; visualization never reimplements the Coulomb law.

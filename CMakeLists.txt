@@ -26,6 +26,7 @@ add_library(aetherion_core
   src/core/body_defaults.cpp
   src/core/scene.cpp
   src/core/scientific_analysis.cpp
+  src/core/position_edit_history.cpp
   src/core/simulation.cpp
   src/core/simulation_clock.cpp
   src/core/simulation_controller.cpp

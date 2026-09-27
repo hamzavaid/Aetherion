@@ -67,13 +67,24 @@ int main() {
         renderer.pollEvents();
         if (const auto click = renderer.takeViewportClick()) {
             const auto ray = camera.rayFromNdc(click->x_ndc, click->y_ndc, click->aspect_ratio);
-            const auto hit = aetherion::renderer::pickBody(
-                controller.scene(), ray,
-                {.radius_scale = render_settings.body_radius_scale,
-                 .minimum_radius_m = static_cast<double>(render_settings.minimum_apparent_radius) /
-                                     render_settings.meters_to_render_units});
-            ui.selectEntity(hit ? std::optional{hit->id} : std::nullopt);
+            const auto probe_hit = aetherion::renderer::pickProbe(render_settings.probes, ray,
+                                                                  camera.distanceMeters() * 0.025);
+            if (probe_hit) {
+                ui.selectProbe(probe_hit->index);
+            } else {
+                const auto body_hit = aetherion::renderer::pickBody(
+                    controller.scene(), ray,
+                    {.radius_scale = render_settings.body_radius_scale,
+                     .minimum_radius_m =
+                         static_cast<double>(render_settings.minimum_apparent_radius) /
+                         render_settings.meters_to_render_units});
+                ui.selectEntity(body_hit ? std::optional{body_hit->id} : std::nullopt);
+                if (!body_hit)
+                    ui.selectProbe(std::nullopt);
+            }
         }
+        for (const auto action : renderer.takeSceneActions())
+            ui.handleSceneAction(controller, render_settings, camera, action);
     }
     return 0;
 #else

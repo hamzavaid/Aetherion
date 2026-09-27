@@ -4,6 +4,7 @@
 #include <string>
 
 #include "aetherion/core/error.hpp"
+#include "aetherion/core/position_edit_history.hpp"
 #include "aetherion/core/scientific_analysis.hpp"
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/integrator_comparison.hpp"
@@ -33,10 +34,25 @@ class EngineeringUi final {
         return selected_probe_;
     }
     void selectEntity(std::optional<core::EntityId> entity) noexcept {
+        if (selected_ != entity)
+            position_edits_.clear();
         selected_ = entity;
         if (entity)
             selected_probe_.reset();
     }
+    void selectProbe(std::optional<std::size_t> index) noexcept {
+        if (selected_probe_ != index)
+            position_edits_.clear();
+        selected_probe_ = index;
+        if (index) {
+            selected_.reset();
+            camera_tracker_.stop();
+        }
+    }
+    /// Applies one viewport shortcut. Body positions are queued; probes are display state.
+    void handleSceneAction(core::SimulationController& controller,
+                           renderer::RenderSettings& settings, renderer::Camera& camera,
+                           renderer::SceneActionKind action);
     /// Advances a checked body-reference camera after simulation updates and before rendering.
     void updateCameraTracking(const core::Scene& scene, renderer::Camera& camera) {
         static_cast<void>(camera_tracker_.update(scene, camera));
@@ -56,11 +72,15 @@ class EngineeringUi final {
     void drawPlots(const core::SimulationController& controller);
     void drawProbes(core::SimulationController& controller, renderer::RenderSettings& settings,
                     renderer::Camera& camera);
+    void drawMovementControls(core::SimulationController& controller,
+                              renderer::RenderSettings& settings, renderer::Camera& camera);
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
     std::optional<std::size_t> selected_probe_;
     renderer::CameraTracker camera_tracker_;
+    core::PositionEditHistory position_edits_;
+    double move_step_m_{1.0};
     bool initialized_{};
     bool dock_layout_initialized_{};
     std::size_t new_body_counter_{1};

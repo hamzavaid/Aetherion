@@ -275,6 +275,8 @@ class OpenGlRenderer::Impl final {
     void pollEvents() { glfwPollEvents(); }
     void setInputCapture(const InputCapture& capture) noexcept {
         input_capture_ = capture;
+        if (!routesKeyboardToScene(input_capture_))
+            pending_scene_actions_.clear();
         if (!routesMouseToScene(input_capture_)) {
             orbiting_ = false;
             panning_ = false;
@@ -285,6 +287,11 @@ class OpenGlRenderer::Impl final {
         auto click = pending_viewport_click_;
         pending_viewport_click_.reset();
         return click;
+    }
+    std::vector<SceneActionKind> takeSceneActions() noexcept {
+        auto actions = std::move(pending_scene_actions_);
+        pending_scene_actions_.clear();
+        return actions;
     }
     bool shouldClose() const noexcept {
         return window_ == nullptr || glfwWindowShouldClose(window_) != 0;
@@ -393,13 +400,41 @@ class OpenGlRenderer::Impl final {
     }
 
     static void keyCallback(GLFWwindow* window, int key, int /*scan_code*/, int action,
-                            int /*modifiers*/) {
+                            int modifiers) {
         auto* self = fromWindow(window);
-        if (self != nullptr && self->active_camera_ != nullptr &&
-            routesKeyboardToScene(self->input_capture_) && action == GLFW_PRESS &&
-            key == GLFW_KEY_R) {
+        if (self == nullptr || !routesKeyboardToScene(self->input_capture_))
+            return;
+        const bool control = (modifiers & GLFW_MOD_CONTROL) != 0;
+        if (action == GLFW_PRESS && !control && key == GLFW_KEY_R &&
+            self->active_camera_ != nullptr)
             self->active_camera_->reset();
+        if (action != GLFW_PRESS && action != GLFW_REPEAT)
+            return;
+        std::optional<SceneActionKind> mapped;
+        if (control) {
+            if (action == GLFW_PRESS && key == GLFW_KEY_Z)
+                mapped = SceneActionKind::undo;
+            if (action == GLFW_PRESS && key == GLFW_KEY_R)
+                mapped = SceneActionKind::reset_position;
+        } else {
+            if (key == GLFW_KEY_A || key == GLFW_KEY_LEFT)
+                mapped = SceneActionKind::move_left;
+            else if (key == GLFW_KEY_D || key == GLFW_KEY_RIGHT)
+                mapped = SceneActionKind::move_right;
+            else if (key == GLFW_KEY_W || key == GLFW_KEY_UP)
+                mapped = SceneActionKind::move_forward;
+            else if (key == GLFW_KEY_S || key == GLFW_KEY_DOWN)
+                mapped = SceneActionKind::move_backward;
+            else if (key == GLFW_KEY_E || key == GLFW_KEY_PAGE_UP)
+                mapped = SceneActionKind::move_up;
+            else if (key == GLFW_KEY_Q || key == GLFW_KEY_PAGE_DOWN)
+                mapped = SceneActionKind::move_down;
+            else if (action == GLFW_PRESS && key == GLFW_KEY_HOME)
+                mapped = SceneActionKind::reset_position;
         }
+        constexpr std::size_t maximum_pending_actions = 128U;
+        if (mapped && self->pending_scene_actions_.size() < maximum_pending_actions)
+            self->pending_scene_actions_.push_back(*mapped);
     }
 
     void createSphereResources() {
@@ -817,6 +852,7 @@ class OpenGlRenderer::Impl final {
     double last_cursor_y_{};
     InputCapture input_capture_;
     std::optional<ViewportClick> pending_viewport_click_;
+    std::vector<SceneActionKind> pending_scene_actions_;
     GLuint sphere_program_{};
     GLuint grid_program_{};
     GLuint sphere_vao_{};
@@ -861,6 +897,9 @@ void OpenGlRenderer::setInputCapture(const InputCapture& capture) noexcept {
 }
 std::optional<ViewportClick> OpenGlRenderer::takeViewportClick() noexcept {
     return impl_->takeViewportClick();
+}
+std::vector<SceneActionKind> OpenGlRenderer::takeSceneActions() noexcept {
+    return impl_->takeSceneActions();
 }
 bool OpenGlRenderer::shouldClose() const noexcept { return impl_->shouldClose(); }
 void OpenGlRenderer::requestClose() noexcept { impl_->requestClose(); }
