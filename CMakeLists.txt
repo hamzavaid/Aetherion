@@ -25,6 +25,7 @@ add_library(aetherion_core
   src/core/command_queue.cpp
   src/core/body_defaults.cpp
   src/core/scene.cpp
+  src/core/scientific_analysis.cpp
   src/core/simulation.cpp
   src/core/simulation_clock.cpp
   src/core/simulation_controller.cpp
@@ -49,6 +50,7 @@ add_library(aetherion_renderer
   src/renderer/adaptive_grid.cpp
   src/renderer/camera.cpp
   src/renderer/camera_tracking.cpp
+  src/renderer/diagnostic_visualization.cpp
   src/renderer/field_visualization.cpp
   src/renderer/mesh.cpp
   src/renderer/picking.cpp

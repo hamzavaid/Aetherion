@@ -11,8 +11,19 @@ namespace aetherion::renderer {
 /// orbit orientation. Missing entities automatically detach the tracker.
 class CameraTracker final {
   public:
-    void follow(core::EntityId entity) noexcept { followed_entity_ = entity; }
-    void stop() noexcept { followed_entity_.reset(); }
+    void follow(core::EntityId entity) noexcept {
+        followed_entity_ = entity;
+        center_of_mass_ = false;
+    }
+    void followCenterOfMass() noexcept {
+        followed_entity_.reset();
+        center_of_mass_ = true;
+    }
+    void stop() noexcept {
+        followed_entity_.reset();
+        center_of_mass_ = false;
+    }
+    [[nodiscard]] bool followingCenterOfMass() const noexcept { return center_of_mass_; }
     [[nodiscard]] std::optional<core::EntityId> followedEntity() const noexcept {
         return followed_entity_;
     }
@@ -23,6 +34,7 @@ class CameraTracker final {
 
   private:
     std::optional<core::EntityId> followed_entity_;
+    bool center_of_mass_{};
 };
 
 } // namespace aetherion::renderer

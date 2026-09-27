@@ -73,7 +73,8 @@ constexpr const char* grid_fragment_shader = R"(
 #version 410 core
 in vec3 vColor;
 out vec4 fragmentColor;
-void main() { fragmentColor = vec4(vColor, 1.0); }
+uniform float uAlpha;
+void main() { fragmentColor = vec4(vColor, uAlpha); }
 )";
 
 struct InstanceGpu {
@@ -230,6 +231,7 @@ class OpenGlRenderer::Impl final {
 
         if (settings.show_grid) {
             glUseProgram(grid_program_);
+            glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 1.0F);
             glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
                                matrix.data());
             glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), grid_origin_.x,
@@ -241,6 +243,7 @@ class OpenGlRenderer::Impl final {
         drawTrails(scene, camera, settings, matrix);
         updateFieldVisualization(scene, settings, fields);
         drawFieldVisualization(camera, settings, matrix);
+        drawMotionGlyphs(scene, camera, settings, matrix);
 
         if (!gpu_instances.empty()) {
             glUseProgram(sphere_program_);
@@ -501,6 +504,7 @@ class OpenGlRenderer::Impl final {
         if (!settings.trails_enabled)
             return;
         glUseProgram(grid_program_);
+        glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 1.0F);
         glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
                            matrix.data());
         glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
@@ -533,6 +537,7 @@ class OpenGlRenderer::Impl final {
         if (fields == nullptr || settings.field_visualization.mode == FieldDisplayMode::none) {
             field_glyphs_.clear();
             field_lines_.clear();
+            field_plane_cells_.clear();
             field_cache_valid_ = false;
             return;
         }
@@ -544,9 +549,15 @@ class OpenGlRenderer::Impl final {
         field_cache_revision_ = revision;
         field_glyphs_.clear();
         field_lines_.clear();
+        field_plane_cells_.clear();
         if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
             field_glyphs_ = sampleObservedField(*fields, settings.field_visualization,
                                                 settings.simulation_time_s);
+            return;
+        }
+        if (settings.field_visualization.mode == FieldDisplayMode::magnitude_plane) {
+            field_plane_cells_ = sampleMagnitudePlane(*fields, settings.field_visualization,
+                                                      settings.simulation_time_s);
             return;
         }
         auto seeds = settings.field_visualization.lines.custom_seeds_m;
@@ -571,6 +582,7 @@ class OpenGlRenderer::Impl final {
         if (settings.field_visualization.mode == FieldDisplayMode::none)
             return;
         glUseProgram(grid_program_);
+        glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 1.0F);
         glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
                            matrix.data());
         glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
@@ -585,7 +597,44 @@ class OpenGlRenderer::Impl final {
                 return vectors ? colors.magnetic_vectors : colors.magnetic_lines;
             return vectors ? colors.gravity_vectors : colors.gravity_lines;
         }();
-        if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
+        if (settings.field_visualization.mode == FieldDisplayMode::magnitude_plane) {
+            std::vector<GridVertexGpu> triangles;
+            triangles.reserve(field_plane_cells_.size() * 6U);
+            const auto geometry = settings.field_visualization.vectors.geometry;
+            for (const auto& cell : field_plane_cells_) {
+                const auto e = cell.half_extent_m;
+                const math::Vec3d u = geometry == SamplingGeometry::plane_yz
+                                          ? math::Vec3d{0.0, e.y, 0.0}
+                                          : math::Vec3d{e.x, 0.0, 0.0};
+                const math::Vec3d v = geometry == SamplingGeometry::plane_xy
+                                          ? math::Vec3d{0.0, e.y, 0.0}
+                                          : math::Vec3d{0.0, 0.0, e.z};
+                const std::array points = {cell.center_m - u - v, cell.center_m + u - v,
+                                           cell.center_m + u + v, cell.center_m - u - v,
+                                           cell.center_m + u + v, cell.center_m - u + v};
+                const float t = static_cast<float>(cell.intensity);
+                const std::array<float, 3> heat = {0.12F + 0.88F * t, 0.25F + 0.5F * t,
+                                                   0.85F - 0.72F * t};
+                for (const auto& point : points) {
+                    const auto relative = toCameraRelative(point, camera.positionWorld(),
+                                                           settings.meters_to_render_units);
+                    triangles.push_back({{relative.x, relative.y, relative.z}, heat});
+                }
+            }
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDepthMask(GL_FALSE);
+            glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 0.55F);
+            if (!triangles.empty()) {
+                glBindBuffer(GL_ARRAY_BUFFER, trail_vbo_);
+                glBufferData(GL_ARRAY_BUFFER,
+                             static_cast<GLsizeiptr>(triangles.size() * sizeof(GridVertexGpu)),
+                             triangles.data(), GL_STREAM_DRAW);
+                glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(triangles.size()));
+            }
+            glDepthMask(GL_TRUE);
+            glDisable(GL_BLEND);
+        } else if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
             std::vector<GridVertexGpu> vertices;
             vertices.reserve(field_glyphs_.size() * 6U);
             for (const auto& glyph : field_glyphs_) {
@@ -618,6 +667,47 @@ class OpenGlRenderer::Impl final {
                 uploadAndDrawLineVertices(vertices, GL_LINE_STRIP);
             }
         }
+        glBindVertexArray(0);
+    }
+
+    void drawMotionGlyphs(const core::Scene& scene, const Camera& camera,
+                          const RenderSettings& settings, const Mat4f& matrix) {
+        const auto glyphs = generateMotionGlyphs(scene, settings.motion_glyphs,
+                                                 settings.selected_entity, camera.distanceMeters());
+        if (glyphs.empty())
+            return;
+        glUseProgram(grid_program_);
+        glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 1.0F);
+        glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
+                           matrix.data());
+        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
+        glBindVertexArray(trail_vao_);
+        std::vector<GridVertexGpu> vertices;
+        vertices.reserve(glyphs.size() * 6U);
+        for (const auto& glyph : glyphs) {
+            const auto end = glyph.position_m + glyph.direction * glyph.visual_length_m;
+            auto side = math::cross(glyph.direction, {0.0, 1.0, 0.0});
+            if (side.squaredNorm() < 1.0e-12)
+                side = math::cross(glyph.direction, {1.0, 0.0, 0.0});
+            side = side.normalized();
+            const auto wing = end - glyph.direction * (0.25 * glyph.visual_length_m);
+            const std::array points = {glyph.position_m,
+                                       end,
+                                       end,
+                                       wing + side * (0.12 * glyph.visual_length_m),
+                                       end,
+                                       wing - side * (0.12 * glyph.visual_length_m)};
+            const std::array<float, 3> color =
+                glyph.kind == MotionGlyphKind::velocity ? std::array{0.2F, 1.0F, 0.35F}
+                : glyph.kind == MotionGlyphKind::force  ? std::array{1.0F, 0.45F, 0.1F}
+                                                        : std::array{0.15F, 0.9F, 1.0F};
+            for (const auto& point : points) {
+                const auto relative = toCameraRelative(point, camera.positionWorld(),
+                                                       settings.meters_to_render_units);
+                vertices.push_back({{relative.x, relative.y, relative.z}, color});
+            }
+        }
+        uploadAndDrawLineVertices(vertices, GL_LINES);
         glBindVertexArray(0);
     }
 
@@ -673,6 +763,7 @@ class OpenGlRenderer::Impl final {
     TrailHistory trail_history_;
     std::vector<FieldVectorGlyph> field_glyphs_;
     std::vector<TracedFieldLine> field_lines_;
+    std::vector<FieldPlaneCell> field_plane_cells_;
     std::uint64_t field_cache_revision_{};
     bool field_cache_valid_{};
 };

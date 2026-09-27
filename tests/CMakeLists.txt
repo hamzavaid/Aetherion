@@ -2,8 +2,10 @@ add_executable(aetherion_tests
   unit/error_tests.cpp
   unit/electrostatics_tests.cpp
   unit/field_visualization_tests.cpp
+  unit/diagnostic_visualization_tests.cpp
   unit/log_tests.cpp
   unit/scene_tests.cpp
+  unit/scientific_analysis_tests.cpp
   unit/serialization_tests.cpp
   unit/simulation_clock_tests.cpp
   unit/gravity_tests.cpp

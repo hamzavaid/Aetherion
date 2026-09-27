@@ -10,7 +10,7 @@
 
 namespace aetherion::renderer {
 
-enum class FieldDisplayMode { none, observed_vectors, field_lines };
+enum class FieldDisplayMode { none, observed_vectors, field_lines, magnitude_plane };
 enum class ObservedField { electric, magnetic, gravity };
 enum class SamplingGeometry { volume, plane_xy, plane_xz, plane_yz };
 enum class VectorScaling { normalized, logarithmic, linear };
@@ -73,10 +73,25 @@ struct TracedFieldLine {
     std::vector<math::Vec3d> points_m;
 };
 
+struct FieldPlaneCell {
+    math::Vec3d center_m;
+    math::Vec3d half_extent_m;
+    double magnitude_SI{};
+    double intensity{};
+};
+
 /// Samples a bounded plane or volume and creates finite SI-space vector glyph descriptions.
 [[nodiscard]] std::vector<FieldVectorGlyph>
 sampleObservedField(const physics::fields::IFieldProvider& provider,
                     const FieldVisualizationSettings& settings, double time_s);
+
+/// Samples a selected XY/XZ/YZ world-frame slice in meters and maps finite E (V/m), B (T), or g
+/// (m/s^2) magnitudes to [0,1] via log1p(m-min)/log1p(max-min) normalization. Invalid or
+/// singular samples and configured threshold violations are omitted. The display intensity has
+/// no physical units; each cell also preserves its raw SI magnitude for labels and diagnostics.
+[[nodiscard]] std::vector<FieldPlaneCell>
+sampleMagnitudePlane(const physics::fields::IFieldProvider& provider,
+                     const FieldVisualizationSettings& settings, double time_s);
 
 /// Traces normalized field tangents with visualization-only RK4 and a global work budget.
 [[nodiscard]] std::vector<TracedFieldLine>

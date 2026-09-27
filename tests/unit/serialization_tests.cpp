@@ -38,6 +38,13 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     field.colors.magnetic_lines = {0.15F, 0.25F, 0.35F};
     field.colors.gravity_vectors = {0.2F, 0.4F, 0.6F};
     field.colors.gravity_lines = {0.3F, 0.5F, 0.7F};
+    auto& visual = original.visualization;
+    visual.motion_glyphs.velocity = true;
+    visual.motion_glyphs.acceleration = true;
+    visual.motion_glyphs.length_fraction = 0.18;
+    visual.probes.push_back({"Probe A", {2.0, 3.0, 4.0}});
+    visual.reference_frame = aetherion::core::ReferenceFrame::selected_body;
+    visual.reference_body = 42;
 
     const auto encoded = aetherion::serialization::serializeScene(original);
     const auto decoded = aetherion::serialization::deserializeScene(encoded);
@@ -79,6 +86,25 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
               field.colors.gravity_vectors);
     EXPECT_EQ(decoded.value().visualization.field_visualization.colors.gravity_lines,
               field.colors.gravity_lines);
+    EXPECT_TRUE(decoded.value().visualization.motion_glyphs.velocity);
+    EXPECT_TRUE(decoded.value().visualization.motion_glyphs.acceleration);
+    EXPECT_DOUBLE_EQ(decoded.value().visualization.motion_glyphs.length_fraction, 0.18);
+    ASSERT_EQ(decoded.value().visualization.probes.size(), 1U);
+    EXPECT_EQ(decoded.value().visualization.probes[0], visual.probes[0]);
+    EXPECT_EQ(decoded.value().visualization.reference_frame,
+              aetherion::core::ReferenceFrame::selected_body);
+    EXPECT_EQ(decoded.value().visualization.reference_body, visual.reference_body);
+}
+
+TEST(SceneSerialization, MagnitudePlaneModeRoundTrips) {
+    aetherion::serialization::SceneDocument document;
+    document.visualization.field_visualization.mode =
+        aetherion::renderer::FieldDisplayMode::magnitude_plane;
+    const auto decoded = aetherion::serialization::deserializeScene(
+        aetherion::serialization::serializeScene(document));
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(decoded.value().visualization.field_visualization.mode,
+              aetherion::renderer::FieldDisplayMode::magnitude_plane);
 }
 
 TEST(SceneSerialization, RejectsUnknownSchemaAndNonFiniteJsonNumber) {

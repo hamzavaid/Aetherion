@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include <string>
 #include <utility>
@@ -99,12 +100,14 @@ void EngineeringUi::drawDockSpace() {
         ImGui::DockBuilderDockWindow("Save History", bottom);
         ImGui::DockBuilderDockWindow("Diagnostics", bottom);
         ImGui::DockBuilderDockWindow("Plots", bottom);
+        ImGui::DockBuilderDockWindow("Field Probes", bottom);
         ImGui::DockBuilderFinish(dock_id);
     }
     ImGui::End();
 }
 
-void EngineeringUi::drawHierarchy(core::SimulationController& controller) {
+void EngineeringUi::drawHierarchy(core::SimulationController& controller,
+                                  const renderer::RenderSettings& settings) {
     ImGui::Begin("Scene Hierarchy");
     for (const auto& body : controller.scene().bodies()) {
         const bool selected = selected_ && *selected_ == body.id;
@@ -137,6 +140,12 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller) {
             controller.commands().enqueue(core::DeleteBodyCommand{*selected_});
             selected_.reset();
         }
+    }
+    if (!settings.probes.empty()) {
+        ImGui::SeparatorText("Fixed Field Probes");
+        for (const auto& probe : settings.probes)
+            ImGui::BulletText("%s [%.4g, %.4g, %.4g] m", probe.name.c_str(), probe.position_m.x,
+                              probe.position_m.y, probe.position_m.z);
     }
     ImGui::End();
 }
@@ -262,6 +271,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SameLine();
     if (ImGui::Button("Reset")) {
         controller.reset();
+        scientific_history_.clear();
         if (selected_ && controller.scene().find(*selected_) == nullptr)
             selected_.reset();
     }
@@ -296,6 +306,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                 camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
                 camera_tracker_.stop();
                 selected_.reset();
+                scientific_history_.clear();
                 scene_file_status_ = "Loaded aetherion_scene.json";
             } else {
                 scene_file_status_ = status.error().message;
@@ -455,6 +466,56 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                             &render_settings.trail_duration_s, &minimum_trail_s, &maximum_trail_s,
                             "%.4g s", ImGuiSliderFlags_Logarithmic);
     }
+    ImGui::SeparatorText("Motion Vectors (display only)");
+    auto& motion = render_settings.motion_glyphs;
+    ImGui::Checkbox("Velocity arrows (green)", &motion.velocity);
+    ImGui::Checkbox("Force arrows (orange)", &motion.force);
+    ImGui::Checkbox("Acceleration arrows (cyan)", &motion.acceleration);
+    if (motion.velocity || motion.force || motion.acceleration) {
+        ImGui::Checkbox("Selected body only", &motion.selected_only);
+        constexpr double minimum_arrow_fraction_ = 0.01;
+        constexpr double maximum_arrow_fraction_ = 0.5;
+        ImGui::SliderScalar("Arrow length / camera distance", ImGuiDataType_Double,
+                            &motion.length_fraction, &minimum_arrow_fraction_,
+                            &maximum_arrow_fraction_);
+        constexpr const char* motion_scales[] = {"Normalized", "Logarithmic", "Linear"};
+        int motion_scaling = static_cast<int>(motion.scaling);
+        if (ImGui::Combo("Motion arrow scaling", &motion_scaling, motion_scales, 3))
+            motion.scaling = static_cast<renderer::VectorScaling>(motion_scaling);
+        if (motion.scaling != renderer::VectorScaling::normalized) {
+            if (motion.velocity)
+                ImGui::InputDouble("Velocity reference (m/s)", &motion.velocity_reference_mps);
+            if (motion.force)
+                ImGui::InputDouble("Force reference (N)", &motion.force_reference_N);
+            if (motion.acceleration)
+                ImGui::InputDouble("Acceleration reference (m/s^2)",
+                                   &motion.acceleration_reference_mps2);
+        }
+    }
+    ImGui::SeparatorText("Reference Frame");
+    constexpr const char* frames[] = {"World", "Center of mass", "Selected body"};
+    int frame = static_cast<int>(render_settings.reference_frame);
+    if (ImGui::Combo("Plot / coordinate frame", &frame, frames, 3)) {
+        render_settings.reference_frame = static_cast<core::ReferenceFrame>(frame);
+        if (render_settings.reference_frame == core::ReferenceFrame::selected_body)
+            render_settings.reference_body = selected_;
+    }
+    if (render_settings.reference_frame == core::ReferenceFrame::selected_body) {
+        if (selected_ && ImGui::SmallButton("Use selected as frame anchor"))
+            render_settings.reference_body = selected_;
+        if (render_settings.reference_body)
+            ImGui::Text("Frame anchor: body %llu",
+                        static_cast<unsigned long long>(*render_settings.reference_body));
+        else
+            ImGui::TextDisabled("Select a body to set the frame anchor.");
+    }
+    bool follow_com = camera_tracker_.followingCenterOfMass();
+    if (ImGui::Checkbox("Follow center of mass camera", &follow_com)) {
+        if (follow_com)
+            camera_tracker_.followCenterOfMass();
+        else
+            camera_tracker_.stop();
+    }
     ImGui::SeparatorText("Electric / Magnetic / Gravity Field Display");
     auto& field = render_settings.field_visualization;
     if (ImGui::Button(field.planar_2d ? "Return to 3D field view" : "Show 2D field view")) {
@@ -467,9 +528,10 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     }
     if (field.planar_2d)
         ImGui::TextDisabled("Orthographic XZ view; out-of-plane field components are hidden.");
-    constexpr const char* field_modes[] = {"None", "Observed Vector Field", "Field Lines"};
+    constexpr const char* field_modes[] = {"None", "Observed Vector Field", "Field Lines",
+                                           "Field Magnitude Plane"};
     int field_mode = static_cast<int>(field.mode);
-    if (ImGui::Combo("Display mode", &field_mode, field_modes, 3))
+    if (ImGui::Combo("Display mode", &field_mode, field_modes, 4))
         field.mode = static_cast<renderer::FieldDisplayMode>(field_mode);
     constexpr const char* field_types[] = {"Electric (V/m)", "Magnetic (T)", "Gravity (m/s^2)"};
     int field_type = static_cast<int>(field.field);
@@ -483,7 +545,8 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         field.region.half_extent_m.x, field.region.half_extent_m.y, field.region.half_extent_m.z};
     if (ImGui::InputScalarN("Field half extent (m)", ImGuiDataType_Double, region_extent.data(), 3))
         field.region.half_extent_m = {region_extent[0], region_extent[1], region_extent[2]};
-    if (field.mode == renderer::FieldDisplayMode::observed_vectors) {
+    if (field.mode == renderer::FieldDisplayMode::observed_vectors ||
+        field.mode == renderer::FieldDisplayMode::magnitude_plane) {
         constexpr const char* geometries[] = {"3D volume", "XY plane", "XZ plane", "YZ plane"};
         int geometry = static_cast<int>(field.vectors.geometry);
         if (ImGui::Combo("Sampling region", &geometry, geometries, 4))
@@ -491,7 +554,9 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         int resolution = static_cast<int>(field.vectors.resolution);
         if (ImGui::SliderInt("Field resolution", &resolution, 2, 24))
             field.vectors.resolution = static_cast<std::size_t>(resolution);
-        ImGui::InputDouble("Vector length (m)", &field.vectors.visual_length_m, 0.0, 0.0, "%.6g");
+        if (field.mode == renderer::FieldDisplayMode::observed_vectors)
+            ImGui::InputDouble("Vector length (m)", &field.vectors.visual_length_m, 0.0, 0.0,
+                               "%.6g");
         constexpr const char* scales[] = {"Normalized", "Logarithmic", "Linear"};
         int scaling = static_cast<int>(field.vectors.scaling);
         if (ImGui::Combo("Vector scaling", &scaling, scales, 3))
@@ -533,7 +598,8 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         if (seed_to_remove >= 0)
             field.lines.custom_seeds_m.erase(field.lines.custom_seeds_m.begin() + seed_to_remove);
     }
-    if (field.mode != renderer::FieldDisplayMode::none) {
+    if (field.mode == renderer::FieldDisplayMode::observed_vectors ||
+        field.mode == renderer::FieldDisplayMode::field_lines) {
         ImGui::SeparatorText("Active Field Color");
         const bool vectors = field.mode == renderer::FieldDisplayMode::observed_vectors;
         if (field.field == renderer::ObservedField::electric) {
@@ -572,6 +638,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera.focus(bounds.center_world_m, bounds.radius_m);
             camera_tracker_.stop();
             selected_.reset();
+            scientific_history_.clear();
         }
     };
     if (ImGui::Button("Earth-Sun"))
@@ -600,6 +667,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
             camera_tracker_.stop();
             selected_.reset();
+            scientific_history_.clear();
         }
     };
     if (ImGui::Button("Like charges"))
@@ -639,6 +707,7 @@ void EngineeringUi::drawSaveHistory(core::SimulationController& controller) {
             ImGui::PushID(static_cast<int>(checkpoint->id));
             if (ImGui::SmallButton("Restore")) {
                 static_cast<void>(controller.restoreCheckpoint(checkpoint->id));
+                scientific_history_.clear();
                 if (selected_ && controller.scene().find(*selected_) == nullptr)
                     selected_.reset();
             }
@@ -652,13 +721,77 @@ void EngineeringUi::drawSaveHistory(core::SimulationController& controller) {
     ImGui::End();
 }
 
+void EngineeringUi::drawProbes(core::SimulationController& controller,
+                               renderer::RenderSettings& settings) {
+    ImGui::Begin("Field Probes");
+    ImGui::TextDisabled("Fixed world positions; fields sampled in SI units.");
+    if (settings.probes.size() < 16U && ImGui::Button("Add field probe")) {
+        settings.probes.push_back({"Probe " + std::to_string(settings.probes.size() + 1U),
+                                   settings.field_visualization.region.center_m});
+    }
+    int remove_index = -1;
+    for (std::size_t index = 0; index < settings.probes.size(); ++index) {
+        auto& probe = settings.probes[index];
+        ImGui::PushID(static_cast<int>(index));
+        if (ImGui::TreeNode(probe.name.c_str())) {
+            std::array<char, 128> name{};
+            std::snprintf(name.data(), name.size(), "%s", probe.name.c_str());
+            if (ImGui::InputText("Name", name.data(), name.size()) && name[0] != '\0')
+                probe.name = name.data();
+            std::array<double, 3> position = {probe.position_m.x, probe.position_m.y,
+                                              probe.position_m.z};
+            if (ImGui::InputScalarN("Position (m)", ImGuiDataType_Double, position.data(), 3)) {
+                const math::Vec3d candidate{position[0], position[1], position[2]};
+                if (candidate.isFinite())
+                    probe.position_m = candidate;
+            }
+            const auto observation = core::sampleProbe(controller.fieldProvider(), probe,
+                                                       controller.simulationTimeSeconds());
+            if (observation) {
+                if (observation->electromagnetic_valid) {
+                    ImGui::Text("|E|: %.6g V/m", observation->electric_Vpm.norm());
+                    ImGui::Text("|B|: %.6g T", observation->magnetic_T.norm());
+                } else {
+                    ImGui::TextDisabled("E/B sample invalid at source or singularity.");
+                }
+                if (observation->gravity_valid)
+                    ImGui::Text("|g|: %.6g m/s^2", observation->gravity_mps2.norm());
+                else
+                    ImGui::TextDisabled("Gravity sample invalid at source or singularity.");
+            }
+            if (ImGui::SmallButton("Remove probe"))
+                remove_index = static_cast<int>(index);
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    if (remove_index >= 0)
+        settings.probes.erase(settings.probes.begin() + remove_index);
+    ImGui::End();
+}
+
 void EngineeringUi::drawDiagnostics(const core::SimulationController& controller) {
     ImGui::Begin("Diagnostics");
     ImGui::Text("Simulation time: %.9g s", controller.simulationTimeSeconds());
     ImGui::Text("Bodies: %zu", controller.scene().size());
     ImGui::Text("Pending commands: %zu", controller.commands().pendingCount());
+    if (const auto center = core::centerOfMass(controller.scene())) {
+        ImGui::Text("Center of mass: [%.6g, %.6g, %.6g] m", center->position_m.x,
+                    center->position_m.y, center->position_m.z);
+        ImGui::Text("Bulk velocity: [%.6g, %.6g, %.6g] m/s", center->velocity_mps.x,
+                    center->velocity_mps.y, center->velocity_mps.z);
+    }
     if (selected_) {
         if (const auto* body = controller.scene().find(*selected_)) {
+            if (!scientific_history_.bodySamples().empty()) {
+                const auto& observed = scientific_history_.bodySamples().back().body;
+                ImGui::Text("Frame position: [%.6g, %.6g, %.6g] m", observed.position_m.x,
+                            observed.position_m.y, observed.position_m.z);
+                ImGui::Text("Frame velocity: [%.6g, %.6g, %.6g] m/s", observed.velocity_mps.x,
+                            observed.velocity_mps.y, observed.velocity_mps.z);
+                ImGui::Text("Net force estimate: [%.6g, %.6g, %.6g] N", observed.net_force_N.x,
+                            observed.net_force_N.y, observed.net_force_N.z);
+            }
             const auto field = physics::em::sampleAnalyticField(
                 controller.settings().electromagnetism, body->state.position_m,
                 controller.simulationTimeSeconds());
@@ -740,27 +873,85 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
 
 void EngineeringUi::drawPlots(const core::SimulationController& controller) {
     ImGui::Begin("Plots");
-    constexpr const char* metrics[] = {"Relative energy error", "Momentum error (kg m/s)",
-                                       "Total energy (J)", "Maximum speed drift (m/s)"};
-    ImGui::Combo("Metric", &plot_metric_, metrics, 4);
+    constexpr const char* metrics[] = {"Relative energy error",
+                                       "Momentum error (kg m/s)",
+                                       "Total energy (J)",
+                                       "Maximum speed drift (m/s)",
+                                       "Body X (m)",
+                                       "Body Y (m)",
+                                       "Body Z (m)",
+                                       "Body speed (m/s)",
+                                       "Body acceleration (m/s^2)",
+                                       "Body net force (N)",
+                                       "Body kinetic energy (J)",
+                                       "Probe |E| (V/m)",
+                                       "Probe |B| (T)",
+                                       "Probe |g| (m/s^2)"};
+    ImGui::Combo("Metric", &plot_metric_, metrics, 14);
     const auto& samples = controller.telemetry().samples();
     std::vector<float> values;
-    values.reserve(samples.size());
-    for (const auto& sample : samples) {
-        double value = sample.relative_energy_error;
-        if (plot_metric_ == 1)
-            value = sample.momentum_error_kg_mps;
-        if (plot_metric_ == 2)
-            value = sample.total_energy_J;
-        if (plot_metric_ == 3)
-            value = sample.maximum_speed_drift_mps;
-        values.push_back(static_cast<float>(value));
+    const auto add_value = [&](double value) {
+        if (std::isfinite(value) && std::abs(value) <= static_cast<double>(FLT_MAX))
+            values.push_back(static_cast<float>(value));
+    };
+    if (plot_metric_ < 4) {
+        values.reserve(samples.size());
+        for (const auto& sample : samples) {
+            if (plot_metric_ == 0)
+                add_value(sample.relative_energy_error);
+            else if (plot_metric_ == 1)
+                add_value(sample.momentum_error_kg_mps);
+            else if (plot_metric_ == 2)
+                add_value(sample.total_energy_J);
+            else
+                add_value(sample.maximum_speed_drift_mps);
+        }
+    } else if (plot_metric_ < 11) {
+        for (const auto& sample : scientific_history_.bodySamples()) {
+            const auto& body = sample.body;
+            switch (plot_metric_) {
+            case 4:
+                add_value(body.position_m.x);
+                break;
+            case 5:
+                add_value(body.position_m.y);
+                break;
+            case 6:
+                add_value(body.position_m.z);
+                break;
+            case 7:
+                add_value(body.speed_mps);
+                break;
+            case 8:
+                add_value(body.acceleration_mps2.norm());
+                break;
+            case 9:
+                add_value(body.net_force_N.norm());
+                break;
+            default:
+                add_value(body.kinetic_energy_J);
+                break;
+            }
+        }
+    } else if (!scientific_history_.probeSamples().empty()) {
+        const int maximum_probe = static_cast<int>(scientific_history_.probeSamples().size()) - 1;
+        plot_probe_ = std::clamp(plot_probe_, 0, maximum_probe);
+        ImGui::SliderInt("Probe index", &plot_probe_, 0, maximum_probe);
+        for (const auto& sample :
+             scientific_history_.probeSamples()[static_cast<std::size_t>(plot_probe_)]) {
+            if (plot_metric_ == 11 && sample.electromagnetic_valid)
+                add_value(sample.electric_Vpm.norm());
+            else if (plot_metric_ == 12 && sample.electromagnetic_valid)
+                add_value(sample.magnetic_T.norm());
+            else if (plot_metric_ == 13 && sample.gravity_valid)
+                add_value(sample.gravity_mps2.norm());
+        }
     }
     if (!values.empty()) {
         ImGui::PlotLines(metrics[plot_metric_], values.data(), static_cast<int>(values.size()), 0,
                          nullptr, FLT_MAX, FLT_MAX, {-1.0F, 120.0F});
     } else {
-        ImGui::TextUnformatted("Run or single-step the simulation to collect telemetry.");
+        ImGui::TextUnformatted("Select a body or add a probe, then run or step the simulation.");
     }
     ImGui::End();
 }
@@ -774,10 +965,17 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     drawDockSpace();
-    drawHierarchy(controller);
+    drawHierarchy(controller, render_settings);
     drawInspector(controller, camera, render_settings);
     drawSimulationControls(controller, camera, render_settings);
     drawSaveHistory(controller);
+    const auto history_status = scientific_history_.record(
+        controller.scene(), controller.fieldProvider(), controller.simulationTimeSeconds(),
+        selected_, render_settings.probes, render_settings.reference_frame,
+        render_settings.reference_body);
+    if (!history_status)
+        scientific_history_.clear();
+    drawProbes(controller, render_settings);
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;

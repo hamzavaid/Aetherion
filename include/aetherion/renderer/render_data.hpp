@@ -4,6 +4,8 @@
 #include <vector>
 
 #include "aetherion/core/scene.hpp"
+#include "aetherion/core/scientific_analysis.hpp"
+#include "aetherion/renderer/diagnostic_visualization.hpp"
 #include "aetherion/renderer/field_visualization.hpp"
 #include "aetherion/renderer/types.hpp"
 
@@ -19,6 +21,10 @@ struct RenderSettings {
     double trail_duration_s{2'592'000.0};
     double simulation_time_s{};
     FieldVisualizationSettings field_visualization;
+    MotionGlyphSettings motion_glyphs;
+    std::vector<core::FieldProbe> probes;
+    core::ReferenceFrame reference_frame{core::ReferenceFrame::world};
+    std::optional<core::EntityId> reference_body;
 };
 
 struct BodyInstance {

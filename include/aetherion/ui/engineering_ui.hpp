@@ -4,6 +4,7 @@
 #include <string>
 
 #include "aetherion/core/error.hpp"
+#include "aetherion/core/scientific_analysis.hpp"
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/renderer/camera.hpp"
@@ -37,7 +38,8 @@ class EngineeringUi final {
 
   private:
     void drawDockSpace();
-    void drawHierarchy(core::SimulationController& controller);
+    void drawHierarchy(core::SimulationController& controller,
+                       const renderer::RenderSettings& settings);
     void drawInspector(core::SimulationController& controller, renderer::Camera& camera,
                        const renderer::RenderSettings& render_settings);
     void drawSimulationControls(core::SimulationController& controller, renderer::Camera& camera,
@@ -45,6 +47,7 @@ class EngineeringUi final {
     void drawSaveHistory(core::SimulationController& controller);
     void drawDiagnostics(const core::SimulationController& controller);
     void drawPlots(const core::SimulationController& controller);
+    void drawProbes(core::SimulationController& controller, renderer::RenderSettings& settings);
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
@@ -53,6 +56,8 @@ class EngineeringUi final {
     bool dock_layout_initialized_{};
     std::size_t new_body_counter_{1};
     int plot_metric_{};
+    int plot_probe_{};
+    core::ScientificHistory scientific_history_;
     std::optional<physics::IntegratorComparisonReport> comparison_;
     renderer::InputCapture input_capture_;
     std::string scene_file_status_;

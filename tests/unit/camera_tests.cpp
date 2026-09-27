@@ -121,3 +121,28 @@ TEST(CameraTracker, ClearsReferenceWhenTrackedEntityIsRemoved) {
     EXPECT_FALSE(tracker.update(scene, camera));
     EXPECT_FALSE(tracker.followedEntity());
 }
+
+TEST(CameraTracker, CenterOfMassReferenceTracksWeightedMotionAndPreservesZoom) {
+    aetherion::core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "heavy",
+                                  .mass_kg = 3.0,
+                                  .radius_m = 0.1,
+                                  .state = {.position_m = {0.0, 0.0, 0.0}}}));
+    ASSERT_TRUE(scene.createBody({.name = "light",
+                                  .mass_kg = 1.0,
+                                  .radius_m = 0.1,
+                                  .state = {.position_m = {8.0, 0.0, 0.0}}}));
+    Camera camera;
+    camera.zoom(5.0);
+    const double distance = camera.distanceMeters();
+    aetherion::renderer::CameraTracker tracker;
+    tracker.followCenterOfMass();
+    ASSERT_TRUE(tracker.update(scene, camera));
+    EXPECT_DOUBLE_EQ(camera.targetWorld().x, 2.0);
+    scene.bodies()[1].state.position_m.x = 12.0;
+    ASSERT_TRUE(tracker.update(scene, camera));
+    EXPECT_DOUBLE_EQ(camera.targetWorld().x, 3.0);
+    EXPECT_DOUBLE_EQ(camera.distanceMeters(), distance);
+    tracker.stop();
+    EXPECT_FALSE(tracker.update(scene, camera));
+}

@@ -78,6 +78,17 @@ int main() {
     if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 11;
     renderer.present();
+    local_settings.motion_glyphs.velocity = true;
+    local_settings.motion_glyphs.force = true;
+    local_scene.bodies()[0].state.velocity_mps = {1.0, 0.0, 0.0};
+    local_scene.bodies()[0].state.acceleration_mps2 = {0.0, 1.0, 0.0};
+    local_settings.field_visualization.mode =
+        aetherion::renderer::FieldDisplayMode::magnitude_plane;
+    local_settings.field_visualization.vectors.geometry =
+        aetherion::renderer::SamplingGeometry::plane_xz;
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 12;
+    renderer.present();
 
     aetherion::core::Scene astronomical_scene;
     if (!astronomical_scene.createBody({.name = "astronomical",

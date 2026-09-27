@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 
@@ -206,6 +207,67 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
         }
     }
     return glyphs;
+}
+
+std::vector<FieldPlaneCell> sampleMagnitudePlane(const physics::fields::IFieldProvider& provider,
+                                                 const FieldVisualizationSettings& settings,
+                                                 double time_s) {
+    validate(settings);
+    if (!std::isfinite(time_s))
+        throw std::invalid_argument("field plane time must be finite in s");
+    const auto geometry = effectiveGeometry(settings) == SamplingGeometry::volume
+                              ? SamplingGeometry::plane_xz
+                              : effectiveGeometry(settings);
+    const std::size_t count = settings.vectors.resolution;
+    std::vector<FieldPlaneCell> cells;
+    cells.reserve(count * count);
+    double lowest = std::numeric_limits<double>::infinity();
+    double highest = 0.0;
+    for (std::size_t row = 0; row < count; ++row) {
+        for (std::size_t column = 0; column < count; ++column) {
+            auto position = settings.region.center_m;
+            math::Vec3d half;
+            if (geometry == SamplingGeometry::plane_xy) {
+                position.x = coordinate(column, count, position.x, settings.region.half_extent_m.x);
+                position.y = coordinate(row, count, position.y, settings.region.half_extent_m.y);
+                half = {settings.region.half_extent_m.x / static_cast<double>(count - 1U) * 0.95,
+                        settings.region.half_extent_m.y / static_cast<double>(count - 1U) * 0.95,
+                        0.0};
+            } else if (geometry == SamplingGeometry::plane_yz) {
+                position.y = coordinate(column, count, position.y, settings.region.half_extent_m.y);
+                position.z = coordinate(row, count, position.z, settings.region.half_extent_m.z);
+                half = {0.0,
+                        settings.region.half_extent_m.y / static_cast<double>(count - 1U) * 0.95,
+                        settings.region.half_extent_m.z / static_cast<double>(count - 1U) * 0.95};
+            } else {
+                position.x = coordinate(column, count, position.x, settings.region.half_extent_m.x);
+                position.z = coordinate(row, count, position.z, settings.region.half_extent_m.z);
+                half = {settings.region.half_extent_m.x / static_cast<double>(count - 1U) * 0.95,
+                        0.0,
+                        settings.region.half_extent_m.z / static_cast<double>(count - 1U) * 0.95};
+            }
+            const auto sample = provider.sample(position, time_s);
+            if (!selectedFieldValid(sample, settings))
+                continue;
+            const auto vector = selectedVector(sample, settings);
+            const double magnitude = vector.norm();
+            if (!vector.isFinite() || !std::isfinite(magnitude) ||
+                magnitude < settings.vectors.minimum_magnitude ||
+                magnitude > settings.vectors.maximum_magnitude)
+                continue;
+            lowest = std::min(lowest, magnitude);
+            highest = std::max(highest, magnitude);
+            cells.push_back({position, half, magnitude, 0.0});
+        }
+    }
+    for (auto& cell : cells) {
+        if (highest == lowest)
+            cell.intensity = 1.0;
+        else
+            cell.intensity = std::clamp(
+                std::log1p(cell.magnitude_SI - lowest) / std::log1p(highest - lowest), 0.0, 1.0);
+    }
+    return cells;
 }
 
 std::vector<TracedFieldLine> traceFieldLines(const physics::fields::IFieldProvider& provider,

@@ -350,7 +350,28 @@ std::string serializeScene(const SceneDocument& document) {
     writeColor(out, field.colors.gravity_vectors);
     out << ",\"gravityLines\":";
     writeColor(out, field.colors.gravity_lines);
-    out << "}}}}\n";
+    const auto& motion = visual.motion_glyphs;
+    out << "}},\"motionGlyphs\":{\"velocity\":" << boolText(motion.velocity)
+        << ",\"force\":" << boolText(motion.force)
+        << ",\"acceleration\":" << boolText(motion.acceleration)
+        << ",\"selectedOnly\":" << boolText(motion.selected_only)
+        << ",\"lengthFraction\":" << motion.length_fraction
+        << ",\"scaling\":" << static_cast<int>(motion.scaling)
+        << ",\"velocityReference\":" << motion.velocity_reference_mps
+        << ",\"forceReference\":" << motion.force_reference_N
+        << ",\"accelerationReference\":" << motion.acceleration_reference_mps2
+        << "},\"referenceFrame\":" << static_cast<int>(visual.reference_frame)
+        << ",\"referenceBody\":" << visual.reference_body.value_or(0) << ",\"probes\":[";
+    for (std::size_t index = 0; index < visual.probes.size(); ++index) {
+        if (index > 0U)
+            out << ',';
+        out << "{\"name\":";
+        writeEscaped(out, visual.probes[index].name);
+        out << ",\"position\":";
+        writeVector(out, visual.probes[index].position_m);
+        out << '}';
+    }
+    out << "]}}\n";
     return out.str();
 }
 
@@ -412,7 +433,7 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         document.visualization.trail_duration_s = number(visual, "trailDuration");
         auto& field = document.visualization.field_visualization;
         const auto& field_json = object(member(visual, "field"));
-        field.mode = enumValue<renderer::FieldDisplayMode>(field_json, "mode", 2);
+        field.mode = enumValue<renderer::FieldDisplayMode>(field_json, "mode", 3);
         field.field = enumValue<renderer::ObservedField>(field_json, "type", 2);
         field.planar_2d = optionalBoolean(field_json, "planar2d", false);
         field.region.center_m = vector(member(field_json, "center"));
@@ -450,6 +471,44 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
             if (const auto gravity_lines = colors.find("gravityLines");
                 gravity_lines != colors.end()) {
                 field.colors.gravity_lines = color(gravity_lines->second);
+            }
+        }
+        if (const auto motion_member = visual.find("motionGlyphs"); motion_member != visual.end()) {
+            const auto& value = object(motion_member->second);
+            auto& motion = document.visualization.motion_glyphs;
+            motion.velocity = boolean(value, "velocity");
+            motion.force = boolean(value, "force");
+            motion.acceleration = boolean(value, "acceleration");
+            motion.selected_only = boolean(value, "selectedOnly");
+            motion.length_fraction = number(value, "lengthFraction");
+            motion.scaling = enumValue<renderer::VectorScaling>(value, "scaling", 2);
+            motion.velocity_reference_mps = number(value, "velocityReference");
+            motion.force_reference_N = number(value, "forceReference");
+            motion.acceleration_reference_mps2 = number(value, "accelerationReference");
+            if (!(motion.length_fraction > 0.0 && motion.length_fraction <= 1.0) ||
+                !(motion.velocity_reference_mps > 0.0 && motion.force_reference_N > 0.0 &&
+                  motion.acceleration_reference_mps2 > 0.0))
+                throw std::runtime_error("invalid motion glyph settings");
+        }
+        if (visual.contains("referenceFrame"))
+            document.visualization.reference_frame =
+                enumValue<core::ReferenceFrame>(visual, "referenceFrame", 2);
+        if (visual.contains("referenceBody")) {
+            const auto id = sizeValue(visual, "referenceBody");
+            if (id != 0U)
+                document.visualization.reference_body = static_cast<core::EntityId>(id);
+        }
+        if (visual.contains("probes")) {
+            const auto& probes = array(member(visual, "probes"));
+            if (probes.size() > 16U)
+                throw std::runtime_error("too many saved field probes");
+            for (const auto& probe_value : probes) {
+                const auto& probe = object(probe_value);
+                auto name = string(probe, "name");
+                if (name.empty())
+                    throw std::runtime_error("field probe requires a name");
+                document.visualization.probes.push_back(
+                    {std::move(name), vector(member(probe, "position"))});
             }
         }
         const auto em_status =

@@ -54,6 +54,14 @@ the inspector. Object trails can be enabled under Simulation Controls, with a lo
 slider measured in simulation seconds. Trail history is bounded and automatically clears when
 simulation time is reset.
 
+Scientific visualization adds display-only velocity, net-force, and acceleration arrows; a
+log-scaled electric, magnetic, or gravity field-magnitude slice; and up to 16 fixed world-space
+field probes. The Plots tab can graph global diagnostics, selected-body motion, or probe field
+magnitudes. Position and velocity readings can use the world, center-of-mass, or body-anchored
+translating frame. A separate center-of-mass camera follow control keeps the scene framed while
+preserving orbit and zoom. Probe definitions, frame selection, and visualization controls are saved
+with scene JSON; plot histories are session-only.
+
 Electrostatic presets, charge editing, interaction controls, observed electric-vector lattices, and
 RK4-traced electric field lines are available from Simulation Controls. Field sampling and tracing
 operate through a physics-provider interface; visualization never reimplements the Coulomb law.
