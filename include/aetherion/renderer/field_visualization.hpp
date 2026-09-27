@@ -56,11 +56,19 @@ struct FieldVisualizationSettings {
     ObservedField field{ObservedField::electric};
     /// Projects samples and traces onto the selected 2D sampling plane for display only.
     bool planar_2d{};
+    /// For magnitude slices, centers and scales the sampling plane with the camera view.
+    bool plane_follows_camera{true};
     FieldRegion region;
     VectorFieldSettings vectors;
     FieldLineSettings lines;
     FieldColorSettings colors;
 };
+
+/// Resolves an automatic magnitude-slice region from world-space camera target and distance (m).
+/// Other field modes and explicit/manual regions remain unchanged.
+[[nodiscard]] FieldVisualizationSettings
+fitMagnitudePlaneToCamera(FieldVisualizationSettings settings, const math::Vec3d& target_m,
+                          double distance_m);
 
 struct FieldVectorGlyph {
     math::Vec3d position_m;

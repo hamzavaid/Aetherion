@@ -86,8 +86,17 @@ int main() {
         aetherion::renderer::FieldDisplayMode::magnitude_plane;
     local_settings.field_visualization.vectors.geometry =
         aetherion::renderer::SamplingGeometry::plane_xz;
+    aetherion::core::FieldProbe probe{.name = "smoke probe", .position_m = {0.0, 0.0, 1.0}};
+    probe.show_electric_vector = true;
+    probe.show_magnetic_vector = true;
+    local_settings.probes.push_back(probe);
+    local_settings.selected_probe = 0U;
     if (!renderer.render(local_scene, camera, local_settings, &field_provider))
         return 12;
+    renderer.present();
+    camera.orbit(0.0, -1.3);
+    if (!renderer.render(local_scene, camera, local_settings, &field_provider))
+        return 13;
     renderer.present();
 
     aetherion::core::Scene astronomical_scene;

@@ -161,6 +161,20 @@ void hashVector(std::uint64_t& hash, const math::Vec3d& value) noexcept {
 
 } // namespace
 
+FieldVisualizationSettings fitMagnitudePlaneToCamera(FieldVisualizationSettings settings,
+                                                     const math::Vec3d& target_m,
+                                                     double distance_m) {
+    if (settings.mode != FieldDisplayMode::magnitude_plane || !settings.plane_follows_camera ||
+        !target_m.isFinite() || !std::isfinite(distance_m) || distance_m <= 0.0)
+        return settings;
+    const double extent_m = distance_m * 1.5;
+    if (!std::isfinite(extent_m))
+        return settings;
+    settings.region.center_m = target_m;
+    settings.region.half_extent_m = {extent_m, extent_m, extent_m};
+    return settings;
+}
+
 std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldProvider& provider,
                                                   const FieldVisualizationSettings& settings,
                                                   double time_s) {
@@ -369,6 +383,7 @@ std::uint64_t fieldVisualizationRevision(const FieldVisualizationSettings& setti
     hashDouble(hash, static_cast<double>(settings.mode));
     hashDouble(hash, static_cast<double>(settings.field));
     hashDouble(hash, settings.planar_2d ? 1.0 : 0.0);
+    hashDouble(hash, settings.plane_follows_camera ? 1.0 : 0.0);
     hashVector(hash, settings.region.center_m);
     hashVector(hash, settings.region.half_extent_m);
     hashDouble(hash, static_cast<double>(settings.vectors.geometry));

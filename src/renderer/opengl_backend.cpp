@@ -241,7 +241,7 @@ class OpenGlRenderer::Impl final {
         }
 
         drawTrails(scene, camera, settings, matrix);
-        updateFieldVisualization(scene, settings, fields);
+        updateFieldVisualization(scene, camera, settings, fields);
         drawFieldVisualization(camera, settings, matrix);
         drawMotionGlyphs(scene, camera, settings, matrix);
 
@@ -257,6 +257,7 @@ class OpenGlRenderer::Impl final {
             glDrawElementsInstanced(GL_TRIANGLES, sphere_index_count_, GL_UNSIGNED_INT, nullptr,
                                     static_cast<GLsizei>(gpu_instances.size()));
         }
+        drawProbes(camera, settings, matrix, fields);
         glBindVertexArray(0);
         if (glGetError() != GL_NO_ERROR) {
             return core::Error{core::ErrorCode::platform_failure,
@@ -532,7 +533,8 @@ class OpenGlRenderer::Impl final {
         glBindVertexArray(0);
     }
 
-    void updateFieldVisualization(const core::Scene& scene, const RenderSettings& settings,
+    void updateFieldVisualization(const core::Scene& scene, const Camera& camera,
+                                  const RenderSettings& settings,
                                   const physics::fields::IFieldProvider* fields) {
         if (fields == nullptr || settings.field_visualization.mode == FieldDisplayMode::none) {
             field_glyphs_.clear();
@@ -541,8 +543,10 @@ class OpenGlRenderer::Impl final {
             field_cache_valid_ = false;
             return;
         }
+        const auto field_settings = fitMagnitudePlaneToCamera(
+            settings.field_visualization, camera.targetWorld(), camera.distanceMeters());
         const std::uint64_t revision =
-            fields->revision() ^ fieldVisualizationRevision(settings.field_visualization);
+            fields->revision() ^ fieldVisualizationRevision(field_settings);
         if (field_cache_valid_ && revision == field_cache_revision_)
             return;
         field_cache_valid_ = true;
@@ -551,20 +555,19 @@ class OpenGlRenderer::Impl final {
         field_lines_.clear();
         field_plane_cells_.clear();
         if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
-            field_glyphs_ = sampleObservedField(*fields, settings.field_visualization,
-                                                settings.simulation_time_s);
+            field_glyphs_ =
+                sampleObservedField(*fields, field_settings, settings.simulation_time_s);
             return;
         }
         if (settings.field_visualization.mode == FieldDisplayMode::magnitude_plane) {
-            field_plane_cells_ = sampleMagnitudePlane(*fields, settings.field_visualization,
-                                                      settings.simulation_time_s);
+            field_plane_cells_ =
+                sampleMagnitudePlane(*fields, field_settings, settings.simulation_time_s);
             return;
         }
-        auto seeds = settings.field_visualization.lines.custom_seeds_m;
-        auto automatic = generateAutomaticFieldSeeds(scene, settings.field_visualization);
+        auto seeds = field_settings.lines.custom_seeds_m;
+        auto automatic = generateAutomaticFieldSeeds(scene, field_settings);
         seeds.insert(seeds.end(), automatic.begin(), automatic.end());
-        field_lines_ = traceFieldLines(*fields, settings.field_visualization, seeds,
-                                       settings.simulation_time_s);
+        field_lines_ = traceFieldLines(*fields, field_settings, seeds, settings.simulation_time_s);
     }
 
     void uploadAndDrawLineVertices(const std::vector<GridVertexGpu>& vertices, GLenum primitive) {
@@ -623,6 +626,7 @@ class OpenGlRenderer::Impl final {
             }
             glEnable(GL_BLEND);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            glDisable(GL_CULL_FACE);
             glDepthMask(GL_FALSE);
             glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 0.55F);
             if (!triangles.empty()) {
@@ -633,6 +637,7 @@ class OpenGlRenderer::Impl final {
                 glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(triangles.size()));
             }
             glDepthMask(GL_TRUE);
+            glEnable(GL_CULL_FACE);
             glDisable(GL_BLEND);
         } else if (settings.field_visualization.mode == FieldDisplayMode::observed_vectors) {
             std::vector<GridVertexGpu> vertices;
@@ -708,6 +713,71 @@ class OpenGlRenderer::Impl final {
             }
         }
         uploadAndDrawLineVertices(vertices, GL_LINES);
+        glBindVertexArray(0);
+    }
+
+    void drawProbes(const Camera& camera, const RenderSettings& settings, const Mat4f& matrix,
+                    const physics::fields::IFieldProvider* fields) {
+        if (fields == nullptr || settings.probes.empty())
+            return;
+        const auto display =
+            generateProbeDisplay(*fields, settings.probes, settings.simulation_time_s,
+                                 camera.distanceMeters(), settings.selected_probe);
+        if (display.markers.empty())
+            return;
+        glUseProgram(grid_program_);
+        glUniform1f(glGetUniformLocation(grid_program_, "uAlpha"), 1.0F);
+        glUniformMatrix4fv(glGetUniformLocation(grid_program_, "uViewProjection"), 1, GL_FALSE,
+                           matrix.data());
+        glUniform3f(glGetUniformLocation(grid_program_, "uGridOrigin"), 0.0F, 0.0F, 0.0F);
+        glBindVertexArray(trail_vao_);
+        glDisable(GL_DEPTH_TEST);
+        std::vector<GridVertexGpu> vertices;
+        vertices.reserve(display.markers.size() * 24U + display.vectors.size() * 6U);
+        const auto append = [&](const math::Vec3d& point, const std::array<float, 3>& color) {
+            const auto relative =
+                toCameraRelative(point, camera.positionWorld(), settings.meters_to_render_units);
+            vertices.push_back({{relative.x, relative.y, relative.z}, color});
+        };
+        const double marker_size_m = camera.distanceMeters() * 0.02;
+        for (const auto& marker : display.markers) {
+            const std::array<float, 3> color =
+                marker.selected ? std::array{1.0F, 0.9F, 0.12F} : std::array{1.0F, 0.25F, 0.8F};
+            const std::array<math::Vec3d, 6> offsets = {
+                math::Vec3d{marker_size_m, 0.0, 0.0}, math::Vec3d{-marker_size_m, 0.0, 0.0},
+                math::Vec3d{0.0, marker_size_m, 0.0}, math::Vec3d{0.0, -marker_size_m, 0.0},
+                math::Vec3d{0.0, 0.0, marker_size_m}, math::Vec3d{0.0, 0.0, -marker_size_m}};
+            for (std::size_t axis = 0; axis < 3U; ++axis) {
+                append(marker.position_m + offsets[axis * 2U], color);
+                append(marker.position_m + offsets[axis * 2U + 1U], color);
+            }
+            for (std::size_t axis = 0; axis < 4U; ++axis) {
+                append(marker.position_m + offsets[axis], color);
+                append(marker.position_m + offsets[axis + 2U], color);
+            }
+        }
+        for (const auto& vector : display.vectors) {
+            const std::array<float, 3> color =
+                vector.field == ObservedField::electric   ? std::array{1.0F, 0.5F, 0.12F}
+                : vector.field == ObservedField::magnetic ? std::array{0.6F, 0.4F, 1.0F}
+                                                          : std::array{0.2F, 0.85F, 1.0F};
+            const auto end = vector.position_m + vector.direction * vector.visual_length_m;
+            auto side = math::cross(vector.direction, {0.0, 1.0, 0.0});
+            if (side.squaredNorm() < 1.0e-12)
+                side = math::cross(vector.direction, {1.0, 0.0, 0.0});
+            side = side.normalized();
+            const auto wing = end - vector.direction * (0.25 * vector.visual_length_m);
+            const std::array points = {vector.position_m,
+                                       end,
+                                       end,
+                                       wing + side * (0.12 * vector.visual_length_m),
+                                       end,
+                                       wing - side * (0.12 * vector.visual_length_m)};
+            for (const auto& point : points)
+                append(point, color);
+        }
+        uploadAndDrawLineVertices(vertices, GL_LINES);
+        glEnable(GL_DEPTH_TEST);
         glBindVertexArray(0);
     }
 

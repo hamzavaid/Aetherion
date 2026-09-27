@@ -23,6 +23,7 @@ struct RenderSettings {
     FieldVisualizationSettings field_visualization;
     MotionGlyphSettings motion_glyphs;
     std::vector<core::FieldProbe> probes;
+    std::optional<std::size_t> selected_probe;
     core::ReferenceFrame reference_frame{core::ReferenceFrame::world};
     std::optional<core::EntityId> reference_body;
 };

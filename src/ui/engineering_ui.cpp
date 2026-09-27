@@ -107,12 +107,15 @@ void EngineeringUi::drawDockSpace() {
 }
 
 void EngineeringUi::drawHierarchy(core::SimulationController& controller,
-                                  const renderer::RenderSettings& settings) {
+                                  const renderer::RenderSettings& settings,
+                                  renderer::Camera& camera) {
     ImGui::Begin("Scene Hierarchy");
     for (const auto& body : controller.scene().bodies()) {
         const bool selected = selected_ && *selected_ == body.id;
-        if (ImGui::Selectable(body.name.c_str(), selected))
+        if (ImGui::Selectable(body.name.c_str(), selected)) {
             selected_ = body.id;
+            selected_probe_.reset();
+        }
     }
     const bool creates_charge = controller.settings().electromagnetism.electrostatics_enabled ||
                                 controller.settings().electromagnetism.magnetic_enabled;
@@ -143,9 +146,19 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller,
     }
     if (!settings.probes.empty()) {
         ImGui::SeparatorText("Fixed Field Probes");
-        for (const auto& probe : settings.probes)
-            ImGui::BulletText("%s [%.4g, %.4g, %.4g] m", probe.name.c_str(), probe.position_m.x,
-                              probe.position_m.y, probe.position_m.z);
+        for (std::size_t index = 0; index < settings.probes.size(); ++index) {
+            const auto& probe = settings.probes[index];
+            ImGui::PushID(static_cast<int>(index));
+            if (ImGui::Selectable(probe.name.c_str(), selected_probe_ == index)) {
+                selected_probe_ = index;
+                plot_probe_ = static_cast<int>(index);
+                selected_.reset();
+                camera_tracker_.stop();
+                camera.setTargetWorld(probe.position_m);
+                ImGui::SetWindowFocus("Field Probes");
+            }
+            ImGui::PopID();
+        }
     }
     ImGui::End();
 }
@@ -154,7 +167,8 @@ void EngineeringUi::drawInspector(core::SimulationController& controller, render
                                   const renderer::RenderSettings& render_settings) {
     ImGui::Begin("Inspector");
     if (!selected_) {
-        ImGui::TextUnformatted("Select a body in the hierarchy.");
+        ImGui::TextUnformatted(selected_probe_ ? "Selected probe: edit it in Field Probes."
+                                               : "Select a body in the hierarchy.");
         ImGui::End();
         return;
     }
@@ -295,6 +309,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
                 controller.loadState(std::move(loaded.scene), std::move(loaded.runtime));
             if (status) {
                 render_settings = std::move(loaded.visualization);
+                selected_probe_.reset();
                 const auto bounds =
                     renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
                 const auto& field = render_settings.field_visualization;
@@ -533,6 +548,11 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     int field_mode = static_cast<int>(field.mode);
     if (ImGui::Combo("Display mode", &field_mode, field_modes, 4))
         field.mode = static_cast<renderer::FieldDisplayMode>(field_mode);
+    if (field.mode == renderer::FieldDisplayMode::magnitude_plane) {
+        ImGui::Checkbox("Fit plane to camera view", &field.plane_follows_camera);
+        if (field.plane_follows_camera)
+            ImGui::TextDisabled("The slice follows the camera target and expands with zoom.");
+    }
     constexpr const char* field_types[] = {"Electric (V/m)", "Magnetic (T)", "Gravity (m/s^2)"};
     int field_type = static_cast<int>(field.field);
     if (ImGui::Combo("Observed field", &field_type, field_types, 3))
@@ -638,6 +658,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera.focus(bounds.center_world_m, bounds.radius_m);
             camera_tracker_.stop();
             selected_.reset();
+            selected_probe_.reset();
             scientific_history_.clear();
         }
     };
@@ -667,6 +688,7 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
             camera.focus(bounds.center_world_m, std::max(bounds.radius_m, field_radius));
             camera_tracker_.stop();
             selected_.reset();
+            selected_probe_.reset();
             scientific_history_.clear();
         }
     };
@@ -722,18 +744,41 @@ void EngineeringUi::drawSaveHistory(core::SimulationController& controller) {
 }
 
 void EngineeringUi::drawProbes(core::SimulationController& controller,
-                               renderer::RenderSettings& settings) {
+                               renderer::RenderSettings& settings, renderer::Camera& camera) {
     ImGui::Begin("Field Probes");
     ImGui::TextDisabled("Fixed world positions; fields sampled in SI units.");
     if (settings.probes.size() < 16U && ImGui::Button("Add field probe")) {
-        settings.probes.push_back({"Probe " + std::to_string(settings.probes.size() + 1U),
-                                   settings.field_visualization.region.center_m});
+        settings.probes.push_back(
+            {"Probe " + std::to_string(settings.probes.size() + 1U), camera.targetWorld()});
+        selected_probe_ = settings.probes.size() - 1U;
     }
     int remove_index = -1;
     for (std::size_t index = 0; index < settings.probes.size(); ++index) {
         auto& probe = settings.probes[index];
         ImGui::PushID(static_cast<int>(index));
         if (ImGui::TreeNode(probe.name.c_str())) {
+            if (ImGui::SmallButton("Locate in scene")) {
+                selected_probe_ = index;
+                plot_probe_ = static_cast<int>(index);
+                selected_.reset();
+                camera_tracker_.stop();
+                camera.setTargetWorld(probe.position_m);
+            }
+            ImGui::SameLine();
+            ImGui::Checkbox("Show probe in scene", &probe.visible);
+            ImGui::Checkbox("Electric vector", &probe.show_electric_vector);
+            ImGui::SameLine();
+            ImGui::Checkbox("Magnetic vector", &probe.show_magnetic_vector);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gravity vector", &probe.show_gravity_vector);
+            if (probe.show_electric_vector || probe.show_magnetic_vector ||
+                probe.show_gravity_vector) {
+                constexpr double minimum_fraction = 0.01;
+                constexpr double maximum_fraction = 0.5;
+                ImGui::SliderScalar("Vector length / camera distance", ImGuiDataType_Double,
+                                    &probe.vector_length_fraction, &minimum_fraction,
+                                    &maximum_fraction);
+            }
             std::array<char, 128> name{};
             std::snprintf(name.data(), name.size(), "%s", probe.name.c_str());
             if (ImGui::InputText("Name", name.data(), name.size()) && name[0] != '\0')
@@ -765,8 +810,15 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
         }
         ImGui::PopID();
     }
-    if (remove_index >= 0)
+    if (remove_index >= 0) {
         settings.probes.erase(settings.probes.begin() + remove_index);
+        if (selected_probe_) {
+            if (*selected_probe_ == static_cast<std::size_t>(remove_index))
+                selected_probe_.reset();
+            else if (*selected_probe_ > static_cast<std::size_t>(remove_index))
+                --*selected_probe_;
+        }
+    }
     ImGui::End();
 }
 
@@ -965,7 +1017,9 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     drawDockSpace();
-    drawHierarchy(controller, render_settings);
+    if (selected_probe_ && *selected_probe_ >= render_settings.probes.size())
+        selected_probe_.reset();
+    drawHierarchy(controller, render_settings, camera);
     drawInspector(controller, camera, render_settings);
     drawSimulationControls(controller, camera, render_settings);
     drawSaveHistory(controller);
@@ -975,10 +1029,11 @@ core::Status EngineeringUi::draw(core::SimulationController& controller, rendere
         render_settings.reference_body);
     if (!history_status)
         scientific_history_.clear();
-    drawProbes(controller, render_settings);
+    drawProbes(controller, render_settings, camera);
     drawDiagnostics(controller);
     drawPlots(controller);
     render_settings.selected_entity = selected_;
+    render_settings.selected_probe = selected_probe_;
     const auto& io = ImGui::GetIO();
     input_capture_ = {.mouse = io.WantCaptureMouse, .keyboard = io.WantCaptureKeyboard};
     ImGui::Render();

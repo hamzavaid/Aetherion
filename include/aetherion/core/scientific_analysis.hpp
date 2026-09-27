@@ -44,6 +44,12 @@ observeBody(const Scene& scene, EntityId id, ReferenceFrame frame,
 struct FieldProbe {
     std::string name;
     math::Vec3d position_m;
+    bool visible{true};
+    bool show_electric_vector{};
+    bool show_magnetic_vector{};
+    bool show_gravity_vector{};
+    /// Fraction of camera distance assigned to each display-only field arrow.
+    double vector_length_fraction{0.1};
     [[nodiscard]] bool operator==(const FieldProbe&) const = default;
 };
 

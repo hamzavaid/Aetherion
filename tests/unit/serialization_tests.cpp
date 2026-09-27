@@ -43,6 +43,10 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     visual.motion_glyphs.acceleration = true;
     visual.motion_glyphs.length_fraction = 0.18;
     visual.probes.push_back({"Probe A", {2.0, 3.0, 4.0}});
+    visual.probes[0].show_electric_vector = true;
+    visual.probes[0].show_gravity_vector = true;
+    visual.probes[0].vector_length_fraction = 0.2;
+    field.plane_follows_camera = false;
     visual.reference_frame = aetherion::core::ReferenceFrame::selected_body;
     visual.reference_body = 42;
 
@@ -91,6 +95,7 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     EXPECT_DOUBLE_EQ(decoded.value().visualization.motion_glyphs.length_fraction, 0.18);
     ASSERT_EQ(decoded.value().visualization.probes.size(), 1U);
     EXPECT_EQ(decoded.value().visualization.probes[0], visual.probes[0]);
+    EXPECT_FALSE(decoded.value().visualization.field_visualization.plane_follows_camera);
     EXPECT_EQ(decoded.value().visualization.reference_frame,
               aetherion::core::ReferenceFrame::selected_body);
     EXPECT_EQ(decoded.value().visualization.reference_body, visual.reference_body);

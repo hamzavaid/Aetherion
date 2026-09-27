@@ -1,5 +1,6 @@
 #include "aetherion/core/scientific_analysis.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -93,8 +94,14 @@ Status ScientificHistory::record(const Scene& scene,
             return Error{ErrorCode::invalid_argument,
                          "probe needs a name and finite world position"};
     }
+    const bool probe_definitions_changed =
+        probes_.size() != probes.size() ||
+        !std::equal(probes_.begin(), probes_.end(), probes.begin(),
+                    [](const FieldProbe& lhs, const FieldProbe& rhs) {
+                        return lhs.name == rhs.name && lhs.position_m == rhs.position_m;
+                    });
     if ((has_time_ && time_s < last_time_s_) || selected_body_ != selected_body ||
-        probes_ != probes || frame_ != frame || frame_body_id_ != frame_body_id) {
+        probe_definitions_changed || frame_ != frame || frame_body_id_ != frame_body_id) {
         clear();
     }
     selected_body_ = selected_body;

@@ -29,7 +29,14 @@ class EngineeringUi final {
     [[nodiscard]] std::optional<core::EntityId> selectedEntity() const noexcept {
         return selected_;
     }
-    void selectEntity(std::optional<core::EntityId> entity) noexcept { selected_ = entity; }
+    [[nodiscard]] std::optional<std::size_t> selectedProbe() const noexcept {
+        return selected_probe_;
+    }
+    void selectEntity(std::optional<core::EntityId> entity) noexcept {
+        selected_ = entity;
+        if (entity)
+            selected_probe_.reset();
+    }
     /// Advances a checked body-reference camera after simulation updates and before rendering.
     void updateCameraTracking(const core::Scene& scene, renderer::Camera& camera) {
         static_cast<void>(camera_tracker_.update(scene, camera));
@@ -39,7 +46,7 @@ class EngineeringUi final {
   private:
     void drawDockSpace();
     void drawHierarchy(core::SimulationController& controller,
-                       const renderer::RenderSettings& settings);
+                       const renderer::RenderSettings& settings, renderer::Camera& camera);
     void drawInspector(core::SimulationController& controller, renderer::Camera& camera,
                        const renderer::RenderSettings& render_settings);
     void drawSimulationControls(core::SimulationController& controller, renderer::Camera& camera,
@@ -47,10 +54,12 @@ class EngineeringUi final {
     void drawSaveHistory(core::SimulationController& controller);
     void drawDiagnostics(const core::SimulationController& controller);
     void drawPlots(const core::SimulationController& controller);
-    void drawProbes(core::SimulationController& controller, renderer::RenderSettings& settings);
+    void drawProbes(core::SimulationController& controller, renderer::RenderSettings& settings,
+                    renderer::Camera& camera);
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
+    std::optional<std::size_t> selected_probe_;
     renderer::CameraTracker camera_tracker_;
     bool initialized_{};
     bool dock_layout_initialized_{};

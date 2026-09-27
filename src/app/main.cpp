@@ -51,6 +51,7 @@ int main() {
         ui.updateCameraTracking(controller.scene(), camera);
         render_settings.simulation_time_s = controller.simulationTimeSeconds();
         render_settings.selected_entity = ui.selectedEntity();
+        render_settings.selected_probe = ui.selectedProbe();
         const auto render_status = renderer.render(controller.scene(), camera, render_settings,
                                                    &controller.fieldProvider());
         if (!render_status) {

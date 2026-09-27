@@ -51,3 +51,38 @@ TEST(DiagnosticVisualization, MagnitudePlaneSamplesFiniteFieldAndSkipsSourceSing
         EXPECT_TRUE(cell.center_m.isFinite());
     }
 }
+
+TEST(DiagnosticVisualization, ProbeMarkersAndSelectedFieldArrowsUseReadOnlySamples) {
+    core::Scene scene;
+    physics::em::ElectromagneticSettings em;
+    em.analytic_sources.push_back({.electric_Vpm = {2.0, 0.0, 0.0}, .magnetic_T = {0.0, 0.0, 3.0}});
+    physics::em::ElectromagneticFieldProvider provider(scene, em);
+    core::FieldProbe probe{.name = "P", .position_m = {1.0, 2.0, 3.0}};
+    probe.show_electric_vector = true;
+    probe.show_magnetic_vector = true;
+    probe.vector_length_fraction = 0.1;
+    const auto display = renderer::generateProbeDisplay(provider, {probe}, 0.0, 20.0, 0U);
+    ASSERT_EQ(display.markers.size(), 1U);
+    EXPECT_TRUE(display.markers[0].selected);
+    EXPECT_EQ(display.markers[0].position_m, probe.position_m);
+    ASSERT_EQ(display.vectors.size(), 2U);
+    EXPECT_EQ(display.vectors[0].field, renderer::ObservedField::electric);
+    EXPECT_EQ(display.vectors[0].direction, (math::Vec3d{1.0, 0.0, 0.0}));
+    EXPECT_DOUBLE_EQ(display.vectors[0].visual_length_m, 2.0);
+    EXPECT_EQ(display.vectors[1].field, renderer::ObservedField::magnetic);
+    EXPECT_EQ(display.vectors[1].direction, (math::Vec3d{0.0, 0.0, 1.0}));
+}
+
+TEST(DiagnosticVisualization, CameraFittedPlaneSpansViewAndKeepsManualRegion) {
+    renderer::FieldVisualizationSettings settings;
+    settings.mode = renderer::FieldDisplayMode::magnitude_plane;
+    settings.region.center_m = {0.0, 0.0, 0.0};
+    settings.region.half_extent_m = {1.0, 1.0, 1.0};
+    const auto fitted = renderer::fitMagnitudePlaneToCamera(settings, {10.0, 20.0, 30.0}, 100.0);
+    EXPECT_EQ(fitted.region.center_m, (math::Vec3d{10.0, 20.0, 30.0}));
+    EXPECT_GE(fitted.region.half_extent_m.x, 100.0);
+    settings.plane_follows_camera = false;
+    const auto manual = renderer::fitMagnitudePlaneToCamera(settings, {10.0, 20.0, 30.0}, 100.0);
+    EXPECT_EQ(manual.region.center_m, settings.region.center_m);
+    EXPECT_EQ(manual.region.half_extent_m, settings.region.half_extent_m);
+}

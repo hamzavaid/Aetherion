@@ -57,4 +57,43 @@ std::vector<MotionGlyph> generateMotionGlyphs(const core::Scene& scene,
     return output;
 }
 
+ProbeDisplay generateProbeDisplay(const physics::fields::IFieldProvider& provider,
+                                  const std::vector<core::FieldProbe>& probes, double time_s,
+                                  double camera_distance_m,
+                                  std::optional<std::size_t> selected_probe) {
+    ProbeDisplay display;
+    if (!std::isfinite(time_s) || !std::isfinite(camera_distance_m) || camera_distance_m <= 0.0)
+        return display;
+    display.markers.reserve(probes.size());
+    display.vectors.reserve(probes.size() * 3U);
+    for (std::size_t index = 0; index < probes.size(); ++index) {
+        const auto& probe = probes[index];
+        if (!probe.visible || !probe.position_m.isFinite())
+            continue;
+        display.markers.push_back({probe.position_m, selected_probe == index});
+        if (!std::isfinite(probe.vector_length_fraction) || probe.vector_length_fraction <= 0.0 ||
+            probe.vector_length_fraction > 1.0)
+            continue;
+        const auto sample = provider.sample(probe.position_m, time_s);
+        const auto add_vector = [&](ObservedField field, const math::Vec3d& value) {
+            const double magnitude = value.norm();
+            const double length_m = camera_distance_m * probe.vector_length_fraction;
+            if (value.isFinite() && std::isfinite(magnitude) && magnitude > 0.0 &&
+                std::isfinite(length_m)) {
+                display.vectors.push_back(
+                    {field, probe.position_m, value / magnitude, magnitude, length_m});
+            }
+        };
+        if (sample.valid) {
+            if (probe.show_electric_vector)
+                add_vector(ObservedField::electric, sample.electric_Vpm);
+            if (probe.show_magnetic_vector)
+                add_vector(ObservedField::magnetic, sample.magnetic_T);
+        }
+        if (sample.gravity_valid && probe.show_gravity_vector)
+            add_vector(ObservedField::gravity, sample.gravity_mps2);
+    }
+    return display;
+}
+
 } // namespace aetherion::renderer

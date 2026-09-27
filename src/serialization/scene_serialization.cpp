@@ -314,7 +314,8 @@ std::string serializeScene(const SceneDocument& document) {
         << ",\"trailDuration\":" << visual.trail_duration_s
         << ",\"field\":{\"mode\":" << static_cast<int>(field.mode)
         << ",\"type\":" << static_cast<int>(field.field)
-        << ",\"planar2d\":" << boolText(field.planar_2d) << ",\"center\":";
+        << ",\"planar2d\":" << boolText(field.planar_2d)
+        << ",\"planeFollowsCamera\":" << boolText(field.plane_follows_camera) << ",\"center\":";
     writeVector(out, field.region.center_m);
     out << ",\"halfExtent\":";
     writeVector(out, field.region.half_extent_m);
@@ -367,7 +368,12 @@ std::string serializeScene(const SceneDocument& document) {
             out << ',';
         out << "{\"name\":";
         writeEscaped(out, visual.probes[index].name);
-        out << ",\"position\":";
+        out << ",\"visible\":" << boolText(visual.probes[index].visible)
+            << ",\"showElectricVector\":" << boolText(visual.probes[index].show_electric_vector)
+            << ",\"showMagneticVector\":" << boolText(visual.probes[index].show_magnetic_vector)
+            << ",\"showGravityVector\":" << boolText(visual.probes[index].show_gravity_vector)
+            << ",\"vectorLengthFraction\":" << visual.probes[index].vector_length_fraction
+            << ",\"position\":";
         writeVector(out, visual.probes[index].position_m);
         out << '}';
     }
@@ -436,6 +442,7 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         field.mode = enumValue<renderer::FieldDisplayMode>(field_json, "mode", 3);
         field.field = enumValue<renderer::ObservedField>(field_json, "type", 2);
         field.planar_2d = optionalBoolean(field_json, "planar2d", false);
+        field.plane_follows_camera = optionalBoolean(field_json, "planeFollowsCamera", true);
         field.region.center_m = vector(member(field_json, "center"));
         field.region.half_extent_m = vector(member(field_json, "halfExtent"));
         const auto& vectors = object(member(field_json, "vectors"));
@@ -507,8 +514,19 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
                 auto name = string(probe, "name");
                 if (name.empty())
                     throw std::runtime_error("field probe requires a name");
-                document.visualization.probes.push_back(
-                    {std::move(name), vector(member(probe, "position"))});
+                core::FieldProbe definition{std::move(name), vector(member(probe, "position"))};
+                definition.visible = optionalBoolean(probe, "visible", true);
+                definition.show_electric_vector =
+                    optionalBoolean(probe, "showElectricVector", false);
+                definition.show_magnetic_vector =
+                    optionalBoolean(probe, "showMagneticVector", false);
+                definition.show_gravity_vector = optionalBoolean(probe, "showGravityVector", false);
+                if (probe.contains("vectorLengthFraction"))
+                    definition.vector_length_fraction = number(probe, "vectorLengthFraction");
+                if (!(definition.vector_length_fraction > 0.0 &&
+                      definition.vector_length_fraction <= 1.0))
+                    throw std::runtime_error("invalid probe vector length fraction");
+                document.visualization.probes.push_back(std::move(definition));
             }
         }
         const auto em_status =

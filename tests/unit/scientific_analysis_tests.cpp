@@ -96,6 +96,12 @@ TEST(ScientificAnalysis, FixedProbeSamplesFieldAndHistoryReplacesDuplicateTime) 
     ASSERT_TRUE(
         history.record(scene, provider, 5.0, std::nullopt, {probe}, core::ReferenceFrame::world));
     EXPECT_EQ(history.probeSamples().front().size(), 3U);
+    auto display_changed = probe;
+    display_changed.show_electric_vector = true;
+    ASSERT_TRUE(history.record(scene, provider, 6.0, std::nullopt, {display_changed},
+                               core::ReferenceFrame::world));
+    EXPECT_EQ(history.probeSamples().front().size(), 3U);
+    EXPECT_DOUBLE_EQ(history.probeSamples().front().front().time_s, 4.0);
     ASSERT_TRUE(
         history.record(scene, provider, 1.0, std::nullopt, {probe}, core::ReferenceFrame::world));
     EXPECT_EQ(history.probeSamples().front().size(), 1U);

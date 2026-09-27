@@ -62,6 +62,12 @@ translating frame. A separate center-of-mass camera follow control keeps the sce
 preserving orbit and zoom. Probe definitions, frame selection, and visualization controls are saved
 with scene JSON; plot histories are session-only.
 
+Field probes appear as magenta crosses in the scene (gold when selected). Choose a probe in the
+hierarchy to center it without changing zoom, then use **Field Probes** to edit its position and
+toggle its electric, magnetic, or gravity arrows. Magnitude planes render from either side and,
+by default, follow the camera target and expand with zoom; turn off **Fit plane to camera view**
+to use an explicit sampling region.
+
 Electrostatic presets, charge editing, interaction controls, observed electric-vector lattices, and
 RK4-traced electric field lines are available from Simulation Controls. Field sampling and tracing
 operate through a physics-provider interface; visualization never reimplements the Coulomb law.
