@@ -1,5 +1,7 @@
 #include "aetherion/core/scene.hpp"
+#include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
+#include "aetherion/presets/em_presets.hpp"
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/opengl_backend.hpp"
 
@@ -112,5 +114,29 @@ int main() {
         return 5;
     }
     renderer.present();
+    auto propagation = aetherion::presets::makePropagationDelayPreset();
+    aetherion::renderer::RenderSettings retarded_settings;
+    retarded_settings.field_visualization = propagation.visualization;
+    retarded_settings.probes = propagation.probes;
+    aetherion::core::SimulationController retarded_controller(std::move(propagation.scene),
+                                                              propagation.runtime);
+    camera.focus({3.0, 0.0, 0.0}, 8.0);
+    if (!renderer.render(retarded_controller.scene(), camera, retarded_settings,
+                         &retarded_controller.fieldProvider()))
+        return 14;
+    for (int step = 0; step < 40; ++step)
+        if (!retarded_controller.singleStep())
+            return 15;
+    retarded_settings.simulation_time_s = retarded_controller.simulationTimeSeconds();
+    for (const auto mode : {aetherion::renderer::FieldDisplayMode::observed_vectors,
+                            aetherion::renderer::FieldDisplayMode::field_lines,
+                            aetherion::renderer::FieldDisplayMode::magnitude_plane}) {
+        retarded_settings.field_visualization.mode = mode;
+        retarded_settings.field_visualization.plane_follows_camera = false;
+        if (!renderer.render(retarded_controller.scene(), camera, retarded_settings,
+                             &retarded_controller.fieldProvider()))
+            return 16;
+        renderer.present();
+    }
     return 0;
 }

@@ -1,4 +1,5 @@
 #include "aetherion/core/simulation_controller.hpp"
+#include "aetherion/presets/em_presets.hpp"
 #include "aetherion/renderer/opengl_backend.hpp"
 #include "aetherion/ui/engineering_ui.hpp"
 
@@ -48,6 +49,19 @@ int main() {
     if (!ui.draw(controller, camera, settings))
         return 5;
     renderer.setInputCapture(ui.inputCapture());
+    renderer.present();
+    auto propagation = aetherion::presets::makePropagationDelayPreset();
+    if (!controller.loadState(std::move(propagation.scene), propagation.runtime))
+        return 12;
+    settings.field_visualization = propagation.visualization;
+    settings.probes = propagation.probes;
+    for (int step = 0; step < 40; ++step)
+        if (!controller.singleStep())
+            return 13;
+    settings.simulation_time_s = controller.simulationTimeSeconds();
+    if (!renderer.render(controller.scene(), camera, settings, &controller.fieldProvider()) ||
+        !ui.draw(controller, camera, settings))
+        return 14;
     renderer.present();
     return 0;
 }

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "aetherion/core/body_defaults.hpp"
+#include "aetherion/physics/constants.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
 #include "aetherion/physics/em/lorentz.hpp"
 #include "aetherion/physics/stability_analyzer.hpp"
@@ -469,6 +470,41 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         electromagnetic.minimum_separation_m = electric_guard_m;
         controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     }
+    ImGui::SeparatorText("Retarded Field Sampling");
+    bool retarded_changed =
+        ImGui::Checkbox("Retarded Coulomb preview", &electromagnetic.retarded.enabled);
+    if (electromagnetic.retarded.enabled) {
+        ImGui::TextWrapped(
+            "Low-speed delayed-field preview. Particle forces remain instantaneous. "
+            "History begins here; unavailable earlier samples are reported as invalid.");
+        retarded_changed |= ImGui::InputDouble(
+            "History observation distance (m)",
+            &electromagnetic.retarded.maximum_observable_distance_m, 0.0, 0.0, "%.8g");
+        retarded_changed |= ImGui::InputDouble("Retarded absolute tolerance (s)",
+                                               &electromagnetic.retarded.absolute_time_tolerance_s,
+                                               0.0, 0.0, "%.8g");
+        retarded_changed |=
+            ImGui::InputDouble("Retarded relative tolerance",
+                               &electromagnetic.retarded.relative_time_tolerance, 0.0, 0.0, "%.8g");
+        retarded_changed |=
+            ImGui::InputDouble("Retarded source guard (m)",
+                               &electromagnetic.retarded.minimum_distance_m, 0.0, 0.0, "%.8g");
+        int iterations = static_cast<int>(electromagnetic.retarded.maximum_iterations);
+        if (ImGui::SliderInt("Retarded iteration limit", &iterations, 1, 256)) {
+            electromagnetic.retarded.maximum_iterations = static_cast<std::size_t>(iterations);
+            retarded_changed = true;
+        }
+        const auto capacity = physics::em::historyCapacity(electromagnetic.retarded,
+                                                           controller.settings().physics_dt_s);
+        if (capacity)
+            ImGui::Text("Capacity: %zu samples/source; horizon %.6g ns", capacity.value(),
+                        1.0e9 * electromagnetic.retarded.maximum_observable_distance_m /
+                            physics::constants::speed_of_light_mps);
+        else
+            ImGui::TextWrapped("%s", capacity.error().message.c_str());
+    }
+    if (retarded_changed)
+        controller.commands().enqueue(core::SetElectromagneticSettingsCommand{electromagnetic});
     constexpr const char* integrator_names[] = {"Semi-Implicit Euler", "Velocity Verlet", "RK4",
                                                 "Boris"};
     int integrator = static_cast<int>(controller.settings().integrator);
@@ -688,11 +724,18 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         load_gravity_preset(presets::makeSunEarthMoonGravityPreset());
     ImGui::SeparatorText("Electrostatic Presets");
     const auto load_preset = [&](presets::ElectromagneticPreset preset) {
+        const bool retarded_preset = preset.runtime.electromagnetism.retarded.enabled;
         if (controller.loadState(std::move(preset.scene), std::move(preset.runtime))) {
             render_settings.field_visualization = std::move(preset.visualization);
             render_settings.meters_to_render_units = preset.meters_to_render_units;
             render_settings.minimum_apparent_radius = preset.minimum_apparent_radius;
             render_settings.body_radius_scale = preset.body_radius_scale;
+            if (!preset.probes.empty())
+                render_settings.probes = std::move(preset.probes);
+            if (retarded_preset) {
+                plot_metric_ = 14;
+                plot_probe_ = 0;
+            }
             const auto bounds =
                 renderer::calculateSceneFocusBounds(controller.scene(), render_settings);
             const auto& preset_field = render_settings.field_visualization;
@@ -731,6 +774,9 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SameLine();
     if (ImGui::Button("Magnetic field lines"))
         load_preset(presets::makeMagneticFieldLinesPreset());
+    ImGui::SeparatorText("Retarded Electrodynamics Preset");
+    if (ImGui::Button("Propagation-delay probes"))
+        load_preset(presets::makePropagationDelayPreset());
     camera.setTwoDimensional(render_settings.field_visualization.planar_2d);
     ImGui::End();
 }
@@ -774,7 +820,7 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
     for (std::size_t index = 0; index < settings.probes.size(); ++index) {
         auto& probe = settings.probes[index];
         ImGui::PushID(static_cast<int>(index));
-        if (ImGui::TreeNode(probe.name.c_str())) {
+        if (ImGui::TreeNodeEx(probe.name.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
             if (ImGui::SmallButton("Locate in scene")) {
                 selected_probe_ = index;
                 plot_probe_ = static_cast<int>(index);
@@ -819,7 +865,20 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
                     ImGui::Text("|E|: %.6g V/m", observation->electric_Vpm.norm());
                     ImGui::Text("|B|: %.6g T", observation->magnetic_T.norm());
                 } else {
-                    ImGui::TextDisabled("E/B sample invalid at source or singularity.");
+                    if (observation->retarded)
+                        ImGui::TextWrapped(
+                            "Retarded sample: %s",
+                            physics::fields::sampleFailureName(observation->failure).data());
+                    else
+                        ImGui::TextDisabled("E/B sample invalid at source or singularity.");
+                }
+                if (observation->retarded && observation->electromagnetic_valid) {
+                    ImGui::Text("Flight delay (max): %.8g ns",
+                                observation->maximum_delay_s * 1.0e9);
+                    ImGui::Text("Earliest source time: %.8g ns",
+                                (observation->time_s - observation->maximum_delay_s) * 1.0e9);
+                    ImGui::Text("Retarded residual: %.6g s; iterations %zu",
+                                observation->maximum_residual_s, observation->maximum_iterations);
                 }
                 if (observation->gravity_valid)
                     ImGui::Text("|g|: %.6g m/s^2", observation->gravity_mps2.norm());
@@ -960,6 +1019,35 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
     ImGui::Text("Simulation time: %.9g s", controller.simulationTimeSeconds());
     ImGui::Text("Bodies: %zu", controller.scene().size());
     ImGui::Text("Pending commands: %zu", controller.commands().pendingCount());
+    if (controller.settings().electromagnetism.retarded.enabled) {
+        ImGui::SeparatorText("Retarded Sampling Diagnostics");
+        const auto& histories = controller.sourceHistories();
+        const auto& diagnostics = controller.retardedDiagnostics();
+        ImGui::Text("Recorded sources: %zu; capacity/source: %zu", histories.sourceCount(),
+                    histories.capacityPerSource());
+        ImGui::Text("Queries: %llu; converged sources: %llu",
+                    static_cast<unsigned long long>(diagnostics.queries),
+                    static_cast<unsigned long long>(diagnostics.converged_sources));
+        ImGui::Text("History failures: %llu; convergence failures: %llu",
+                    static_cast<unsigned long long>(diagnostics.history_failures),
+                    static_cast<unsigned long long>(diagnostics.convergence_failures));
+        ImGui::Text("Invalid sources: %llu; guarded samples: %llu",
+                    static_cast<unsigned long long>(diagnostics.invalid_sources),
+                    static_cast<unsigned long long>(diagnostics.guarded_sources));
+        ImGui::Text("Maximum iterations/residual: %zu / %.6g s",
+                    diagnostics.maximum_iterations_seen, diagnostics.maximum_residual_s);
+        for (const auto& body : controller.scene().bodies()) {
+            if (const auto* source = histories.find(body.id)) {
+                ImGui::Text("%s: %zu states, [%.6g, %.6g] ns", body.name.c_str(),
+                            source->history.size(), source->history.oldest().time_s * 1.0e9,
+                            source->history.newest().time_s * 1.0e9);
+                if (body.state.velocity_mps.norm() > 0.1 * physics::constants::speed_of_light_mps)
+                    ImGui::TextColored(
+                        {1.0F, 0.5F, 0.2F, 1.0F},
+                        "High source speed: delayed Coulomb approximation is inaccurate.");
+            }
+        }
+    }
     if (const auto center = core::centerOfMass(controller.scene())) {
         ImGui::Text("Center of mass: [%.6g, %.6g, %.6g] m", center->position_m.x,
                     center->position_m.y, center->position_m.z);
@@ -1071,8 +1159,13 @@ void EngineeringUi::drawPlots(const core::SimulationController& controller) {
                                        "Body kinetic energy (J)",
                                        "Probe |E| (V/m)",
                                        "Probe |B| (T)",
-                                       "Probe |g| (m/s^2)"};
-    ImGui::Combo("Metric", &plot_metric_, metrics, 14);
+                                       "Probe |g| (m/s^2)",
+                                       "Probe EM availability (0/1)",
+                                       "Probe flight delay (ns)",
+                                       "Probe earliest source time (ns)",
+                                       "Probe retarded residual (s)",
+                                       "Probe retarded iterations"};
+    ImGui::Combo("Metric", &plot_metric_, metrics, 19);
     const auto& samples = controller.telemetry().samples();
     std::vector<float> values;
     const auto add_value = [&](double value) {
@@ -1130,6 +1223,18 @@ void EngineeringUi::drawPlots(const core::SimulationController& controller) {
                 add_value(sample.magnetic_T.norm());
             else if (plot_metric_ == 13 && sample.gravity_valid)
                 add_value(sample.gravity_mps2.norm());
+            else if (plot_metric_ == 14)
+                add_value(sample.electromagnetic_valid ? 1.0 : 0.0);
+            else if (sample.retarded && sample.electromagnetic_valid) {
+                if (plot_metric_ == 15)
+                    add_value(sample.maximum_delay_s * 1.0e9);
+                else if (plot_metric_ == 16)
+                    add_value((sample.time_s - sample.maximum_delay_s) * 1.0e9);
+                else if (plot_metric_ == 17)
+                    add_value(sample.maximum_residual_s);
+                else if (plot_metric_ == 18)
+                    add_value(static_cast<double>(sample.maximum_iterations));
+            }
         }
     }
     if (!values.empty()) {

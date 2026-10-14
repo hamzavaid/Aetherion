@@ -3,7 +3,8 @@
 Aetherion is an interactive, deterministic 3D mechanics simulator built around a testable
 double-precision physics core. The current release supports Newtonian gravity, multiple numerical
 integrators, Coulomb electrostatics, electric-field sampling and tracing, engineering diagnostics,
-versioned JSON scenes, and an optional OpenGL desktop interface.
+retarded source histories and propagation-delay probes, versioned JSON scenes, and an optional
+OpenGL desktop interface.
 
 ## Build
 
@@ -88,3 +89,17 @@ Semi-Implicit Euler, Velocity Verlet, and classical RK4 are selectable at runtim
 and plots report mechanical energy and momentum errors relative to the initial sample, while the
 timestep analyzer warns when orbital or pair-crossing timescales are under-resolved. Run
 `aetherion_compare` for the reproducible one-period Earth-like integrator comparison.
+
+**Propagation-delay probes** in Simulation Controls loads a moving charge and probes at 3 m and
+6 m. Press Play and inspect Field Probes or plot **Probe EM availability**, **Probe flight delay**,
+or **Probe earliest source time**. With the preset's 1 ns timestep, the first valid samples arrive
+at about 11 ns and 21 ns. Source states are recorded after accepted physics steps and interpolated
+without extrapolation. Missing history, source guards, invalid trajectories, and iteration limits
+are shown in probe readouts and Diagnostics.
+
+**Retarded Coulomb preview** samples the electric field from the source's retarded position with
+finite signal speed. It is a low-speed educational approximation; full velocity/radiation fields
+require a later solver. Particle forces continue to use the existing instantaneous models.
+Observation distance, tolerances, and iteration limits are configurable and saved in scene JSON.
+History storage is bounded and restarts after trajectory edits, timestep changes, scene loads,
+or checkpoint restores, so probes warm up again for their light-travel time.
