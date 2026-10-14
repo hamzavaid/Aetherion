@@ -1,6 +1,7 @@
 #include "aetherion/core/simulation.hpp"
 
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 #include "aetherion/physics/integrators/semi_implicit_euler.hpp"
@@ -9,7 +10,8 @@ namespace aetherion::core {
 
 Simulation::Simulation(Scene& scene, SimulationConfig config)
     : scene_(scene), config_(config), electrostatics_(electromagnetic_settings_),
-      lorentz_(electromagnetic_settings_), field_provider_(scene_, electromagnetic_settings_) {
+      lorentz_(electromagnetic_settings_), field_provider_(scene_, electromagnetic_settings_),
+      retarded_provider_(scene_, electromagnetic_settings_, source_histories_, field_provider_) {
     if (!std::isfinite(config.physics_dt_s) || config.physics_dt_s <= 0.0) {
         throw std::invalid_argument("simulation timestep must be finite and positive in s");
     }
@@ -17,6 +19,13 @@ Simulation::Simulation(Scene& scene, SimulationConfig config)
 }
 
 Status Simulation::step() {
+    std::optional<Scene> accepted_baseline;
+    if (electromagnetic_settings_.retarded.enabled) {
+        const auto record_status = source_histories_.record(scene_, time_s_);
+        if (!record_status)
+            return record_status;
+        accepted_baseline = scene_;
+    }
     const physics::AccelerationFunction evaluate_nonmagnetic = [this](Scene& evaluated_scene) {
         for (auto& body : evaluated_scene.bodies())
             body.state.acceleration_mps2 = {};
@@ -76,27 +85,70 @@ Status Simulation::step() {
     }
     }
     if (!status) {
+        if (accepted_baseline)
+            scene_ = std::move(*accepted_baseline);
         return status;
     }
-    time_s_ += config_.physics_dt_s;
+    const double next_time_s = time_s_ + config_.physics_dt_s;
+    if (!std::isfinite(next_time_s) || next_time_s <= time_s_) {
+        if (accepted_baseline)
+            scene_ = std::move(*accepted_baseline);
+        return Error{ErrorCode::numerical_failure,
+                     "simulation timestep cannot advance finite time"};
+    }
+    if (electromagnetic_settings_.retarded.enabled) {
+        const auto record_status = source_histories_.record(scene_, next_time_s);
+        if (!record_status) {
+            scene_ = std::move(*accepted_baseline);
+            return record_status;
+        }
+    }
+    time_s_ = next_time_s;
     static_cast<void>(telemetry_.sample(scene_, time_s_));
     return success();
 }
 
 void Simulation::setElectromagneticSettings(const physics::em::ElectromagneticSettings& settings) {
+    configureFields(settings, config_.physics_dt_s);
+}
+
+void Simulation::configureFields(const physics::em::ElectromagneticSettings& settings,
+                                 double dt_s) {
     const auto status = physics::em::validateElectromagneticSettings(settings);
     if (!status)
         throw std::invalid_argument(status.error().message);
+    const auto scene_status = physics::em::validateRetardedScene(scene_, settings.retarded, dt_s);
+    if (!scene_status)
+        throw std::invalid_argument(scene_status.error().message);
+    const auto before_revision = source_histories_.revision();
+    const auto configured = source_histories_.configure(settings.retarded, dt_s);
+    if (!configured)
+        throw std::invalid_argument(configured.error().message);
+    config_.physics_dt_s = dt_s;
     electromagnetic_settings_ = settings;
     electrostatics_.setSettings(settings);
     lorentz_.setSettings(settings);
+    if (source_histories_.revision() != before_revision) {
+        retarded_provider_.clearDiagnostics();
+        const auto recorded = source_histories_.record(scene_, time_s_);
+        if (!recorded)
+            throw std::invalid_argument(recorded.error().message);
+    }
 }
 
 void Simulation::setPhysicsDt(double physics_dt_s) {
     if (!std::isfinite(physics_dt_s) || physics_dt_s <= 0.0) {
         throw std::invalid_argument("simulation timestep must be finite and positive in s");
     }
-    config_.physics_dt_s = physics_dt_s;
+    configureFields(electromagnetic_settings_, physics_dt_s);
+}
+
+void Simulation::invalidateSourceHistory() {
+    source_histories_.clear();
+    retarded_provider_.clearDiagnostics();
+    const auto status = source_histories_.record(scene_, time_s_);
+    if (!status)
+        throw std::invalid_argument(status.error().message);
 }
 
 void Simulation::reset(double time_s) {
@@ -104,6 +156,7 @@ void Simulation::reset(double time_s) {
         throw std::invalid_argument("simulation reset time must be finite and non-negative in s");
     }
     time_s_ = time_s;
+    invalidateSourceHistory();
     telemetry_.clear();
     static_cast<void>(telemetry_.sample(scene_, time_s_));
 }

@@ -76,6 +76,7 @@ struct CommandApplyReport {
     std::size_t accepted{};
     std::size_t rejected{};
     std::vector<EntityId> created_ids;
+    bool invalidate_source_history{};
 };
 
 /// Thread-safe FIFO. Draining is restricted to explicit simulation-step boundaries.

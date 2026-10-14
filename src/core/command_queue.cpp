@@ -5,11 +5,12 @@
 #include <utility>
 
 #include "aetherion/physics/em/electrostatics.hpp"
+#include "aetherion/physics/em/retarded_fields.hpp"
 
 namespace aetherion::core {
 namespace {
 
-Status applyPatch(Scene& scene, const UpdateBodyCommand& command) {
+Status applyPatch(Scene& scene, const UpdateBodyCommand& command, const RuntimeSettings& settings) {
     const auto* original = scene.find(command.id);
     if (original == nullptr) {
         return Error{ErrorCode::not_found, "body update target does not exist"};
@@ -32,6 +33,18 @@ Status applyPatch(Scene& scene, const UpdateBodyCommand& command) {
         updated.state.position_m = *patch.position_m;
     if (patch.velocity_mps)
         updated.state.velocity_mps = *patch.velocity_mps;
+    if (settings.electromagnetism.retarded.enabled) {
+        auto trial = scene;
+        const auto replaced = trial.replace(command.id, std::move(updated));
+        if (!replaced)
+            return replaced;
+        const auto valid = physics::em::validateRetardedScene(
+            trial, settings.electromagnetism.retarded, settings.physics_dt_s);
+        if (!valid)
+            return valid;
+        scene = std::move(trial);
+        return success();
+    }
     return scene.replace(command.id, std::move(updated));
 }
 
@@ -64,6 +77,19 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
         [&](const auto& typed) -> Status {
             using T = std::decay_t<decltype(typed)>;
             if constexpr (std::is_same_v<T, CreateBodyCommand>) {
+                if (settings.electromagnetism.retarded.enabled) {
+                    auto trial = scene;
+                    const auto result = trial.createBody(typed.body);
+                    if (!result)
+                        return result.error();
+                    const auto valid = physics::em::validateRetardedScene(
+                        trial, settings.electromagnetism.retarded, settings.physics_dt_s);
+                    if (!valid)
+                        return valid;
+                    scene = std::move(trial);
+                    created_id = result.value();
+                    return success();
+                }
                 const auto result = scene.createBody(typed.body);
                 if (!result)
                     return result.error();
@@ -74,12 +100,16 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
                                               : Status{Error{ErrorCode::not_found,
                                                              "body delete target does not exist"}};
             } else if constexpr (std::is_same_v<T, UpdateBodyCommand>) {
-                return applyPatch(scene, typed);
+                return applyPatch(scene, typed, settings);
             } else if constexpr (std::is_same_v<T, SetPhysicsDtCommand>) {
                 if (!std::isfinite(typed.physics_dt_s) || typed.physics_dt_s <= 0.0) {
                     return Error{ErrorCode::invalid_argument,
                                  "physics timestep must be finite and positive in s"};
                 }
+                const auto valid = physics::em::validateRetardedScene(
+                    scene, settings.electromagnetism.retarded, typed.physics_dt_s);
+                if (!valid)
+                    return valid;
                 settings.physics_dt_s = typed.physics_dt_s;
                 return success();
             } else if constexpr (std::is_same_v<T, SetTimeScaleCommand>) {
@@ -96,6 +126,10 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
                 const auto status = physics::em::validateElectromagneticSettings(typed.settings);
                 if (!status)
                     return status;
+                const auto valid = physics::em::validateRetardedScene(
+                    scene, typed.settings.retarded, settings.physics_dt_s);
+                if (!valid)
+                    return valid;
                 settings.electromagnetism = typed.settings;
                 return success();
             } else {
@@ -135,6 +169,21 @@ CommandApplyReport CommandQueue::apply(Scene& scene, RuntimeSettings& settings,
             ++report.accepted;
             if (created_id)
                 report.created_ids.push_back(*created_id);
+            report.invalidate_source_history =
+                report.invalidate_source_history ||
+                std::visit(
+                    [](const auto& typed) {
+                        using T = std::decay_t<decltype(typed)>;
+                        if constexpr (std::is_same_v<T, UpdateBodyCommand>)
+                            return typed.patch.position_m.has_value() ||
+                                   typed.patch.velocity_mps.has_value() ||
+                                   typed.patch.charge_C.has_value() ||
+                                   typed.patch.fixed.has_value() ||
+                                   typed.patch.interactions.has_value();
+                        return std::is_same_v<T, CreateBodyCommand> ||
+                               std::is_same_v<T, DeleteBodyCommand>;
+                    },
+                    command);
         } else {
             ++report.rejected;
         }

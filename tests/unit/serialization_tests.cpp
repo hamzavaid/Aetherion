@@ -17,6 +17,10 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     original.runtime.electromagnetism.magnetic_enabled = true;
     original.runtime.integrator = aetherion::physics::IntegratorKind::boris;
     original.runtime.electromagnetism.minimum_separation_m = 0.02;
+    original.runtime.electromagnetism.retarded.enabled = true;
+    original.runtime.electromagnetism.retarded.maximum_observable_distance_m = 20.0;
+    original.runtime.electromagnetism.retarded.absolute_time_tolerance_s = 2.0e-15;
+    original.runtime.electromagnetism.retarded.maximum_iterations = 48;
     original.runtime.electromagnetism.analytic_sources.push_back(
         {.electric_Vpm = {1.0, 2.0, 3.0}, .magnetic_T = {0.0, 0.0, 0.4}});
     original.runtime.electromagnetism.analytic_sources.push_back(
@@ -62,6 +66,8 @@ TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     EXPECT_TRUE(decoded.value().runtime.electromagnetism.magnetic_enabled);
     EXPECT_EQ(decoded.value().runtime.integrator, aetherion::physics::IntegratorKind::boris);
     EXPECT_DOUBLE_EQ(decoded.value().runtime.electromagnetism.minimum_separation_m, 0.02);
+    EXPECT_EQ(decoded.value().runtime.electromagnetism.retarded,
+              original.runtime.electromagnetism.retarded);
     ASSERT_EQ(decoded.value().runtime.electromagnetism.analytic_sources.size(), 2U);
     EXPECT_EQ(decoded.value().runtime.electromagnetism.analytic_sources[0].electric_Vpm,
               (aetherion::math::Vec3d{1.0, 2.0, 3.0}));
@@ -117,4 +123,18 @@ TEST(SceneSerialization, RejectsUnknownSchemaAndNonFiniteJsonNumber) {
     EXPECT_FALSE(unknown);
     const auto invalid = aetherion::serialization::deserializeScene(R"({"schemaVersion":NaN})");
     EXPECT_FALSE(invalid);
+}
+
+TEST(SceneSerialization, LegacyScenesDefaultToInstantaneousSamplingAndDoNotStoreHistory) {
+    aetherion::serialization::SceneDocument original;
+    auto json = aetherion::serialization::serializeScene(original);
+    const auto start = json.find(",\"retarded\":{");
+    ASSERT_NE(start, std::string::npos);
+    const auto end = json.find('}', start);
+    ASSERT_NE(end, std::string::npos);
+    json.erase(start, end - start + 1U);
+    const auto decoded = aetherion::serialization::deserializeScene(json);
+    ASSERT_TRUE(decoded);
+    EXPECT_FALSE(decoded.value().runtime.electromagnetism.retarded.enabled);
+    EXPECT_EQ(json.find("historySamples"), std::string::npos);
 }

@@ -3,6 +3,8 @@
 #include <numbers>
 #include <stdexcept>
 
+#include "aetherion/physics/constants.hpp"
+
 namespace aetherion::presets {
 namespace {
 
@@ -117,6 +119,35 @@ ElectromagneticPreset makeMagneticFieldLinesPreset() {
     preset.visualization.mode = renderer::FieldDisplayMode::field_lines;
     preset.visualization.lines.trace_forward = true;
     preset.visualization.lines.trace_backward = true;
+    return preset;
+}
+
+ElectromagneticPreset makePropagationDelayPreset() {
+    ElectromagneticPreset preset;
+    preset.body_radius_scale = 6.0F;
+    preset.runtime.gravity_enabled = false;
+    preset.runtime.physics_dt_s = 1.0e-9;
+    preset.runtime.time_scale = 1.0e-8;
+    preset.runtime.electromagnetism.retarded.enabled = true;
+    preset.runtime.electromagnetism.retarded.maximum_observable_distance_m = 30.0;
+    const auto id = preset.scene.createBody(
+        {.name = "Moving charge (0.01c)",
+         .mass_kg = 1.0,
+         .charge_C = 1.0e-6,
+         .radius_m = 0.05,
+         .state = {.velocity_mps = {0.0, 0.01 * physics::constants::speed_of_light_mps, 0.0}}});
+    if (!id)
+        throw std::runtime_error("propagation-delay preset failed validation");
+    preset.visualization.mode = renderer::FieldDisplayMode::observed_vectors;
+    preset.visualization.field = renderer::ObservedField::electric;
+    preset.visualization.region.center_m = {3.0, 0.0, 0.0};
+    preset.visualization.region.half_extent_m = {4.0, 4.0, 4.0};
+    preset.visualization.vectors.geometry = renderer::SamplingGeometry::plane_xy;
+    preset.visualization.vectors.resolution = 9;
+    preset.visualization.vectors.visual_length_m = 0.3;
+    preset.probes = {
+        {.name = "Near probe (3 m)", .position_m = {3.0, 0.0, 0.0}, .show_electric_vector = true},
+        {.name = "Far probe (6 m)", .position_m = {6.0, 0.0, 0.0}, .show_electric_vector = true}};
     return preset;
 }
 

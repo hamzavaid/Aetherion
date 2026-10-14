@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "aetherion/math/vec3d.hpp"
+#include "aetherion/physics/em/retarded_settings.hpp"
 
 namespace aetherion::physics::em {
 
@@ -24,6 +25,7 @@ struct ElectromagneticSettings {
     double minimum_separation_m{1.0e-9};
     double softening_m{};
     std::vector<AnalyticFieldSource> analytic_sources;
+    RetardedSettings retarded;
 };
 
 } // namespace aetherion::physics::em

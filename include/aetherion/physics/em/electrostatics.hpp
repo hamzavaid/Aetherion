@@ -44,6 +44,10 @@ class ElectromagneticFieldProvider final : public fields::IFieldProvider {
 };
 
 [[nodiscard]] core::Status validateElectromagneticSettings(const ElectromagneticSettings& settings);
+/// Shared guarded/softened point-charge E kernel in SI V/m, inertial world coordinates.
+[[nodiscard]] core::Result<math::Vec3d>
+samplePointChargeField(double charge_C, const math::Vec3d& source_m, const math::Vec3d& observer_m,
+                       const ElectromagneticSettings& settings);
 /// Samples configured static analytic sources without particle-generated Coulomb fields.
 ///
 /// Uniform source components are SI V/m and T. A magnetic dipole uses

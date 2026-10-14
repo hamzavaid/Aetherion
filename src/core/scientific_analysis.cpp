@@ -67,7 +67,12 @@ std::optional<ProbeObservation> sampleProbe(const physics::fields::IFieldProvide
                             .magnetic_T = field.magnetic_T,
                             .gravity_mps2 = field.gravity_mps2,
                             .electromagnetic_valid = field.valid,
-                            .gravity_valid = field.gravity_valid};
+                            .gravity_valid = field.gravity_valid,
+                            .retarded = field.retarded,
+                            .failure = field.failure,
+                            .maximum_delay_s = field.maximum_delay_s,
+                            .maximum_residual_s = field.maximum_residual_s,
+                            .maximum_iterations = field.maximum_iterations};
 }
 
 ScientificHistory::ScientificHistory(std::size_t capacity) : capacity_(capacity) {

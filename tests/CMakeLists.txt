@@ -1,6 +1,7 @@
 add_executable(aetherion_tests
   unit/error_tests.cpp
   unit/electrostatics_tests.cpp
+  unit/retarded_tests.cpp
   unit/field_visualization_tests.cpp
   unit/diagnostic_visualization_tests.cpp
   unit/log_tests.cpp
@@ -31,6 +32,7 @@ add_executable(aetherion_tests
   regression/electrostatic_presets_tests.cpp
   regression/magnetic_presets_tests.cpp
   regression/boris_gyro_tests.cpp
+  regression/retarded_propagation_tests.cpp
   unit/telemetry_tests.cpp
   unit/stability_tests.cpp
   unit/vec3d_tests.cpp

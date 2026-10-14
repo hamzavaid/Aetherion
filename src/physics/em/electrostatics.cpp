@@ -31,6 +31,9 @@ void hashVector(std::uint64_t& hash, const math::Vec3d& value) noexcept {
 } // namespace
 
 core::Status validateElectromagneticSettings(const ElectromagneticSettings& settings) {
+    const auto retarded_status = validateRetardedSettings(settings.retarded);
+    if (!retarded_status)
+        return retarded_status;
     if (!std::isfinite(settings.minimum_separation_m) || settings.minimum_separation_m < 0.0 ||
         !std::isfinite(settings.softening_m) || settings.softening_m < 0.0) {
         return core::Error{core::ErrorCode::invalid_argument,
@@ -43,6 +46,34 @@ core::Status validateElectromagneticSettings(const ElectromagneticSettings& sett
         }
     }
     return core::success();
+}
+
+core::Result<math::Vec3d> samplePointChargeField(double charge_C, const math::Vec3d& source_m,
+                                                 const math::Vec3d& observer_m,
+                                                 const ElectromagneticSettings& settings) {
+    if (!std::isfinite(charge_C) || !source_m.isFinite() || !observer_m.isFinite())
+        return core::Error{core::ErrorCode::invalid_argument,
+                           "point-charge sample requires finite SI inputs"};
+    if (!std::isfinite(settings.minimum_separation_m) || settings.minimum_separation_m < 0.0 ||
+        !std::isfinite(settings.softening_m) || settings.softening_m < 0.0)
+        return core::Error{core::ErrorCode::invalid_argument,
+                           "point-charge guards require finite nonnegative meters"};
+    if (charge_C == 0.0)
+        return math::Vec3d{};
+    const auto displacement = observer_m - source_m;
+    const double r2 = displacement.squaredNorm();
+    if (r2 <= settings.minimum_separation_m * settings.minimum_separation_m)
+        return core::Error{core::ErrorCode::numerical_failure,
+                           "point-charge sample inside source guard"};
+    const double softened = r2 + settings.softening_m * settings.softening_m;
+    const double denominator = softened * std::sqrt(softened);
+    if (!std::isfinite(denominator) || denominator <= 0.0)
+        return core::Error{core::ErrorCode::numerical_failure,
+                           "point-charge distance outside finite range"};
+    const auto field = constants::coulomb_constant * charge_C * displacement / denominator;
+    if (!field.isFinite())
+        return core::Error{core::ErrorCode::numerical_failure, "point-charge sample overflow"};
+    return field;
 }
 
 ElectrostaticSolver::ElectrostaticSolver(ElectromagneticSettings settings)
@@ -144,25 +175,19 @@ fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& posi
     if (!position_m.isFinite() || !std::isfinite(time_s))
         return {.valid = false, .gravity_valid = false};
     auto result = sampleAnalyticField(settings_, position_m, time_s);
-    const double guard_squared = settings_.minimum_separation_m * settings_.minimum_separation_m;
-    const double softening_squared = settings_.softening_m * settings_.softening_m;
     if (result.valid) {
         for (const auto& source : scene_.bodies()) {
             if (source.charge_C == 0.0 ||
                 !source.interactions.contains(core::Interaction::electrostatic)) {
                 continue;
             }
-            const auto displacement_m = position_m - source.state.position_m;
-            const double physical_distance_squared = displacement_m.squaredNorm();
-            if (physical_distance_squared <= guard_squared) {
+            const auto field = samplePointChargeField(source.charge_C, source.state.position_m,
+                                                      position_m, settings_);
+            if (!field) {
                 result.valid = false;
                 break;
             }
-            const double distance_squared = physical_distance_squared + softening_squared;
-            const double inverse_distance_cubed =
-                1.0 / (distance_squared * std::sqrt(distance_squared));
-            result.electric_Vpm += constants::coulomb_constant * source.charge_C * displacement_m *
-                                   inverse_distance_cubed;
+            result.electric_Vpm += field.value();
         }
     }
     for (const auto& source : scene_.bodies()) {

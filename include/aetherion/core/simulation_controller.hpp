@@ -53,6 +53,12 @@ class SimulationController final {
     [[nodiscard]] const physics::fields::IFieldProvider& fieldProvider() const noexcept {
         return simulation_.fieldProvider();
     }
+    [[nodiscard]] const physics::em::SourceHistories& sourceHistories() const noexcept {
+        return simulation_.sourceHistories();
+    }
+    [[nodiscard]] const physics::em::RetardedDiagnostics& retardedDiagnostics() const noexcept {
+        return simulation_.retardedDiagnostics();
+    }
 
   private:
     void applyCommandsAtBoundary();

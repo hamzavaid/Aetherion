@@ -60,6 +60,11 @@ struct ProbeObservation {
     math::Vec3d gravity_mps2;
     bool electromagnetic_valid{true};
     bool gravity_valid{true};
+    bool retarded{};
+    physics::fields::SampleFailure failure{physics::fields::SampleFailure::none};
+    double maximum_delay_s{};
+    double maximum_residual_s{};
+    std::size_t maximum_iterations{};
 };
 
 /// Samples a fixed world-frame position (m) through the shared read-only field provider at time

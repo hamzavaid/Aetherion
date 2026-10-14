@@ -5,6 +5,7 @@
 #include "aetherion/core/telemetry.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
 #include "aetherion/physics/em/lorentz.hpp"
+#include "aetherion/physics/em/retarded_fields.hpp"
 #include "aetherion/physics/gravity/gravity_solver.hpp"
 #include "aetherion/physics/integrators/boris.hpp"
 #include "aetherion/physics/integrators/integrator.hpp"
@@ -26,6 +27,9 @@ class Simulation final {
     void setPhysicsDt(double physics_dt_s);
     void setGravityEnabled(bool enabled) noexcept { gravity_enabled_ = enabled; }
     void setElectromagneticSettings(const physics::em::ElectromagneticSettings& settings);
+    /// Atomically validates timestep and source-history configuration before changing either.
+    void configureFields(const physics::em::ElectromagneticSettings& settings, double dt_s);
+    void invalidateSourceHistory();
     void setIntegrator(physics::IntegratorKind integrator) noexcept {
         config_.integrator = integrator;
     }
@@ -36,7 +40,15 @@ class Simulation final {
     [[nodiscard]] TelemetryRecorder& telemetry() noexcept { return telemetry_; }
     [[nodiscard]] const TelemetryRecorder& telemetry() const noexcept { return telemetry_; }
     [[nodiscard]] const physics::fields::IFieldProvider& fieldProvider() const noexcept {
+        if (electromagnetic_settings_.retarded.enabled)
+            return retarded_provider_;
         return field_provider_;
+    }
+    [[nodiscard]] const physics::em::SourceHistories& sourceHistories() const noexcept {
+        return source_histories_;
+    }
+    [[nodiscard]] const physics::em::RetardedDiagnostics& retardedDiagnostics() const noexcept {
+        return retarded_provider_.diagnostics();
     }
 
   private:
@@ -47,6 +59,8 @@ class Simulation final {
     physics::em::ElectrostaticSolver electrostatics_;
     physics::em::LorentzSolver lorentz_;
     physics::em::ElectromagneticFieldProvider field_provider_;
+    physics::em::SourceHistories source_histories_;
+    physics::em::RetardedFieldProvider retarded_provider_;
     physics::BorisIntegrator boris_;
     physics::VelocityVerletIntegrator velocity_verlet_;
     physics::Rk4Integrator rk4_;

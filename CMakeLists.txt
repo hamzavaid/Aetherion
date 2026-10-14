@@ -34,6 +34,7 @@ add_library(aetherion_core
   src/math/vec3d.cpp
   src/physics/gravity/gravity_solver.cpp
   src/physics/em/electrostatics.cpp
+  src/physics/em/retarded_fields.cpp
   src/physics/em/lorentz.cpp
   src/physics/integrator_comparison.cpp
   src/physics/integrators/rk4.cpp

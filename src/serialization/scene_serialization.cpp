@@ -1,4 +1,5 @@
 #include "aetherion/serialization/scene_serialization.hpp"
+#include "aetherion/physics/em/retarded_fields.hpp"
 
 #include <charconv>
 #include <cmath>
@@ -289,7 +290,13 @@ std::string serializeScene(const SceneDocument& document) {
         writeVector(out, source.magnetic_dipole_moment_Am2);
         out << ",\"singularityRadius\":" << source.singularity_radius_m << '}';
     }
-    out << "]}},\n\"bodies\":[";
+    const auto& retarded = em.retarded;
+    out << "],\"retarded\":{\"enabled\":" << boolText(retarded.enabled)
+        << ",\"maximumDistance\":" << retarded.maximum_observable_distance_m
+        << ",\"absoluteTolerance\":" << retarded.absolute_time_tolerance_s
+        << ",\"relativeTolerance\":" << retarded.relative_time_tolerance
+        << ",\"minimumDistance\":" << retarded.minimum_distance_m
+        << ",\"maximumIterations\":" << retarded.maximum_iterations << "}}},\n\"bodies\":[";
     for (std::size_t index = 0; index < document.scene.size(); ++index) {
         if (index > 0U)
             out << ',';
@@ -399,6 +406,16 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         document.runtime.electromagnetism.magnetic_enabled = boolean(em, "magnetic");
         document.runtime.electromagnetism.minimum_separation_m = number(em, "minimumSeparation");
         document.runtime.electromagnetism.softening_m = number(em, "softening");
+        if (em.contains("retarded")) {
+            const auto& value = object(member(em, "retarded"));
+            auto& settings = document.runtime.electromagnetism.retarded;
+            settings.enabled = boolean(value, "enabled");
+            settings.maximum_observable_distance_m = number(value, "maximumDistance");
+            settings.absolute_time_tolerance_s = number(value, "absoluteTolerance");
+            settings.relative_time_tolerance = number(value, "relativeTolerance");
+            settings.minimum_distance_m = number(value, "minimumDistance");
+            settings.maximum_iterations = sizeValue(value, "maximumIterations");
+        }
         for (const auto& source_value : array(member(em, "sources"))) {
             const auto& source_json = object(source_value);
             physics::em::AnalyticFieldSource source;
@@ -533,6 +550,11 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
             physics::em::validateElectromagneticSettings(document.runtime.electromagnetism);
         if (!em_status)
             return em_status.error();
+        const auto history_status = physics::em::validateRetardedScene(
+            document.scene, document.runtime.electromagnetism.retarded,
+            document.runtime.physics_dt_s);
+        if (!history_status)
+            return history_status.error();
         return document;
     } catch (const std::exception& error) {
         return core::Error{core::ErrorCode::invalid_argument,

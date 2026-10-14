@@ -14,9 +14,8 @@ SimulationController::SimulationController(Scene initial_scene, SimulationContro
 }
 
 void SimulationController::synchronizePhysicsSettings() {
-    simulation_.setPhysicsDt(settings_.physics_dt_s);
+    simulation_.configureFields(settings_.electromagnetism, settings_.physics_dt_s);
     simulation_.setGravityEnabled(settings_.gravity_enabled);
-    simulation_.setElectromagneticSettings(settings_.electromagnetism);
     simulation_.setIntegrator(settings_.integrator);
 }
 
@@ -27,8 +26,10 @@ void SimulationController::synchronizeClockSettings() {
 void SimulationController::applyCommandsAtBoundary() {
     if (commands_.pendingCount() == 0U)
         return;
-    static_cast<void>(commands_.apply(scene_, settings_, simulation_.timeSeconds()));
+    const auto report = commands_.apply(scene_, settings_, simulation_.timeSeconds());
     synchronizePhysicsSettings();
+    if (report.invalidate_source_history)
+        simulation_.invalidateSourceHistory();
 }
 
 Status SimulationController::update(double real_delta_s) {
@@ -38,10 +39,13 @@ Status SimulationController::update(double real_delta_s) {
         synchronizeClockSettings();
         return step_status;
     }
+    // Drain once at the frame's step boundary before the clock chooses its fixed dt. This keeps
+    // timestep and history-capacity edits atomic and avoids stepping with the preceding dt.
+    applyCommandsAtBoundary();
+    synchronizeClockSettings();
     static_cast<void>(clock_.advance(real_delta_s, [&](double dt_s) {
         if (!step_status)
             return;
-        applyCommandsAtBoundary();
         simulation_.setPhysicsDt(dt_s);
         step_status = simulation_.step();
     }));
@@ -88,6 +92,10 @@ Status SimulationController::loadState(Scene scene, RuntimeSettings settings) {
     const auto em_status = physics::em::validateElectromagneticSettings(settings.electromagnetism);
     if (!em_status)
         return em_status;
+    const auto history_status = physics::em::validateRetardedScene(
+        scene, settings.electromagnetism.retarded, settings.physics_dt_s);
+    if (!history_status)
+        return history_status;
     initial_scene_ = scene;
     initial_settings_ = settings;
     checkpoints_.clear();
@@ -100,10 +108,10 @@ void SimulationController::restoreState(const Scene& scene, const RuntimeSetting
     static_cast<void>(commands_.discardPending());
     scene_ = scene;
     settings_ = settings;
+    synchronizePhysicsSettings();
     simulation_.reset(time_s);
     clock_.reset();
     playing_ = false;
-    synchronizePhysicsSettings();
     synchronizeClockSettings();
 }
 
