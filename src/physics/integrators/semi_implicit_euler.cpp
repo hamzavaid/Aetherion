@@ -1,5 +1,9 @@
+/** @file
+ * Velocity-first symplectic Euler stepping of dynamic bodies in inertial SI coordinates.
+ */
 #include "aetherion/physics/integrators/semi_implicit_euler.hpp"
 
+#include "aetherion/core/state_transaction.hpp"
 #include <cmath>
 
 namespace aetherion::physics {
@@ -9,6 +13,7 @@ core::Status SemiImplicitEuler::integrate(core::Scene& scene, double dt_s) {
         return core::Error{core::ErrorCode::invalid_argument,
                            "integration timestep must be finite and positive in s"};
     }
+    core::StateTransaction transaction(scene);
     for (auto& body : scene.bodies()) {
         if (body.fixed) {
             continue;
@@ -20,6 +25,7 @@ core::Status SemiImplicitEuler::integrate(core::Scene& scene, double dt_s) {
                                "Semi-Implicit Euler produced non-finite state"};
         }
     }
+    transaction.commit();
     return core::success();
 }
 

@@ -1,3 +1,6 @@
+/** @file
+ * Runtime command boundaries, playback, presets, and in-session checkpoint orchestration.
+ */
 #pragma once
 
 #include <cstddef>

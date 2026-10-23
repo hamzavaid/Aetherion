@@ -1,3 +1,7 @@
+/** @file
+ * Identical-initial-state numerical comparisons; circular references require valid two-body
+ * geometry.
+ */
 #include "aetherion/physics/integrator_comparison.hpp"
 
 #include <algorithm>
@@ -40,13 +44,26 @@ IntegratorRun runOne(const core::Scene& initial, IntegratorKind kind, double dt_
         const auto final_relative =
             scene.bodies()[1].state.position_m - scene.bodies()[0].state.position_m;
         const double radius = initial_relative.norm();
+        if (!std::isfinite(radius) || radius <= 0.0)
+            return run;
         run.relative_orbit_closure_error = (final_relative - initial_relative).norm() / radius;
         const auto relative_velocity =
             initial.bodies()[1].state.velocity_mps - initial.bodies()[0].state.velocity_mps;
-        const auto angular_axis = math::cross(initial_relative, relative_velocity).normalized();
+        const auto angular_momentum = math::cross(initial_relative, relative_velocity);
+        const double angular_magnitude = angular_momentum.norm();
+        if (initial.size() != 2U || !std::isfinite(angular_magnitude) || angular_magnitude <= 0.0)
+            return run;
+        const auto angular_axis = angular_momentum / angular_magnitude;
         const double total_mass = initial.bodies()[0].mass_kg + initial.bodies()[1].mass_kg;
         const double angular_rate =
             std::sqrt(constants::gravitational_constant * total_mass / (radius * radius * radius));
+        const double expected_speed = angular_rate * radius;
+        if (!std::isfinite(angular_rate) || angular_rate <= 0.0 ||
+            std::abs(relative_velocity.norm() - expected_speed) > expected_speed * 1.0e-6 ||
+            std::abs(math::dot(initial_relative / radius, relative_velocity)) >
+                expected_speed * 1.0e-6)
+            return run;
+        run.orbit_reference_valid = true;
         const auto expected = rotateAroundAxis(initial_relative, angular_axis,
                                                angular_rate * dt_s * static_cast<double>(steps));
         run.relative_orbit_reference_error = (final_relative - expected).norm() / radius;

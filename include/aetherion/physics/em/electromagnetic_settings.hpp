@@ -1,3 +1,6 @@
+/** @file
+ * Static electromagnetic source definitions and guarded nonrelativistic solver settings.
+ */
 #pragma once
 
 #include <vector>

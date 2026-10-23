@@ -1,3 +1,6 @@
+/** @file
+ * Validated FIFO scene edits. Physics mutations are applied only at explicit simulation boundaries.
+ */
 #include "aetherion/core/command_queue.hpp"
 
 #include <cmath>
@@ -133,6 +136,8 @@ Status applyOne(const SimulationCommand& command, Scene& scene, RuntimeSettings&
                 settings.electromagnetism = typed.settings;
                 return success();
             } else {
+                if (!physics::isValidIntegrator(typed.integrator))
+                    return Error{ErrorCode::invalid_argument, "unknown particle integrator"};
                 settings.integrator = typed.integrator;
                 return success();
             }

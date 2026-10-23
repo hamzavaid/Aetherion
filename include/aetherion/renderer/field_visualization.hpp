@@ -1,3 +1,6 @@
+/** @file
+ * Graphics-free field lattices, magnitude slices, and budgeted normalized-tangent RK4 field lines.
+ */
 #pragma once
 
 #include <array>
@@ -64,6 +67,10 @@ struct FieldVisualizationSettings {
     FieldColorSettings colors;
 };
 
+/// Validates finite SI controls, enum values, colors, and bounded per-update tracing work.
+[[nodiscard]] core::Status
+validateFieldVisualizationSettings(const FieldVisualizationSettings& settings);
+
 /// Resolves an automatic magnitude-slice region from world-space camera target and distance (m).
 /// Other field modes and explicit/manual regions remain unchanged.
 [[nodiscard]] FieldVisualizationSettings
@@ -102,6 +109,9 @@ sampleMagnitudePlane(const physics::fields::IFieldProvider& provider,
                      const FieldVisualizationSettings& settings, double time_s);
 
 /// Traces normalized field tangents with visualization-only RK4 and a global work budget.
+/// Distances/steps are meters; maximum_length_m bounds both directions combined (half is reserved
+/// for backward tracing when both are enabled). Each attempted step uses at most four samples.
+/// Invalid, weak, out-of-region, stalled, or singular samples stop that trace without solver edits.
 [[nodiscard]] std::vector<TracedFieldLine>
 traceFieldLines(const physics::fields::IFieldProvider& provider,
                 const FieldVisualizationSettings& settings,

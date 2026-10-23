@@ -1,3 +1,4 @@
+// Representative electrostatic preset dynamics and useful field visualization data.
 #include "aetherion/presets/em_presets.hpp"
 
 #include <gtest/gtest.h>

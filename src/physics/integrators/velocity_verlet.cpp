@@ -1,5 +1,9 @@
+/** @file
+ * Kick-drift-kick Velocity Verlet integration for position-dependent conservative accelerations.
+ */
 #include "aetherion/physics/integrators/velocity_verlet.hpp"
 
+#include "aetherion/core/state_transaction.hpp"
 #include <cmath>
 
 namespace aetherion::physics {
@@ -12,17 +16,16 @@ VelocityVerletIntegrator::step(core::Scene& scene, double dt_s,
             core::ErrorCode::invalid_argument,
             "Velocity Verlet requires a positive finite dt and acceleration evaluator"};
     }
+    core::StateTransaction transaction(scene);
     auto status = evaluate_acceleration(scene);
     if (!status)
         return status;
     const double half_dt = 0.5 * dt_s;
-    const double half_dt_squared = 0.5 * dt_s * dt_s;
     for (auto& body : scene.bodies()) {
         if (body.fixed)
             continue;
-        body.state.position_m +=
-            body.state.velocity_mps * dt_s + body.state.acceleration_mps2 * half_dt_squared;
         body.state.velocity_mps += body.state.acceleration_mps2 * half_dt;
+        body.state.position_m += body.state.velocity_mps * dt_s;
     }
     status = evaluate_acceleration(scene);
     if (!status)
@@ -36,6 +39,7 @@ VelocityVerletIntegrator::step(core::Scene& scene, double dt_s,
                                "Velocity Verlet produced non-finite state"};
         }
     }
+    transaction.commit();
     return core::success();
 }
 

@@ -1,10 +1,28 @@
+// SI invariant accounting, enabled force models, baseline errors, and entity replacement.
 #include "aetherion/core/telemetry.hpp"
 
+#include <cmath>
 #include <gtest/gtest.h>
 
 using aetherion::core::Body;
 using aetherion::core::Scene;
 using aetherion::core::TelemetryRecorder;
+
+TEST(Telemetry, ZeroBaselineAndReplacementBodiesDoNotProduceSpuriousDrift) {
+    Scene scene;
+    const auto id = scene.createBody({.name = "old", .mass_kg = 1.0, .radius_m = 1.0});
+    ASSERT_TRUE(id);
+    TelemetryRecorder recorder;
+    static_cast<void>(recorder.sample(scene, 0.0));
+    scene.bodies()[0].state.velocity_mps = {2.0, 0.0, 0.0};
+    EXPECT_TRUE(std::isfinite(recorder.sample(scene, 1.0).relative_energy_error));
+    ASSERT_TRUE(scene.remove(id.value()));
+    ASSERT_TRUE(scene.createBody({.name = "new",
+                                  .mass_kg = 1.0,
+                                  .radius_m = 1.0,
+                                  .state = {.velocity_mps = {100.0, 0.0, 0.0}}}));
+    EXPECT_DOUBLE_EQ(recorder.sample(scene, 2.0).maximum_speed_drift_mps, 0.0);
+}
 
 TEST(Telemetry, ReportsMechanicalInvariantsInSiUnits) {
     Scene scene;
@@ -25,6 +43,24 @@ TEST(Telemetry, ReportsMechanicalInvariantsInSiUnits) {
     EXPECT_NEAR(sample.linear_momentum_kg_mps.norm(), 0.0, 1.0e-15);
     EXPECT_EQ(sample.center_of_mass_m, (aetherion::math::Vec3d{}));
     EXPECT_EQ(recorder.samples().size(), 1U);
+}
+
+TEST(Telemetry, EnergyUsesEnabledGravityAndCoulombPotentials) {
+    Scene scene;
+    ASSERT_TRUE(
+        scene.createBody({.name = "a", .mass_kg = 1.0, .charge_C = 1.0e-6, .radius_m = 0.1}));
+    ASSERT_TRUE(scene.createBody({.name = "b",
+                                  .mass_kg = 1.0,
+                                  .charge_C = -1.0e-6,
+                                  .radius_m = 0.1,
+                                  .state = {.position_m = {2.0, 0.0, 0.0}}}));
+    TelemetryRecorder recorder;
+    const auto disabled = recorder.sample(scene, 0.0, {.gravity_enabled = false});
+    EXPECT_DOUBLE_EQ(disabled.total_energy_J, 0.0);
+    const auto electric =
+        recorder.sample(scene, 1.0, {.gravity_enabled = false, .electrostatics_enabled = true});
+    EXPECT_NEAR(electric.total_energy_J, -0.00449377589615, 1.0e-12);
+    EXPECT_DOUBLE_EQ(electric.relative_energy_error, 0.0);
 }
 
 TEST(Telemetry, ReportsEnergyAndMomentumErrorsAgainstFirstSample) {

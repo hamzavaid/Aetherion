@@ -1,3 +1,6 @@
+/** @file
+ * UI/viewport input ownership and world-axis movement actions; no direct solver mutation.
+ */
 #pragma once
 
 #include <cmath>

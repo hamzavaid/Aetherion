@@ -1,6 +1,103 @@
+// Versioned SI round trips, exact IDs, malformed JSON, Unicode, and safe save failure.
 #include "aetherion/serialization/scene_serialization.hpp"
 
+#include <chrono>
+#include <filesystem>
 #include <gtest/gtest.h>
+
+TEST(SceneSerialization, PreservesLargeEntityIdsAndRejectsMalformedNumbers) {
+    aetherion::serialization::SceneDocument document;
+    constexpr aetherion::core::EntityId large_id = 9'007'199'254'740'993ULL;
+    ASSERT_TRUE(document.scene.importBody(
+        {.id = large_id, .name = "large ID", .mass_kg = 1.0, .radius_m = 1.0}));
+    const auto encoded = aetherion::serialization::serializeScene(document);
+    const auto decoded = aetherion::serialization::deserializeScene(encoded);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(decoded.value().scene.bodies().front().id, large_id);
+    for (const auto bad_number : {"01", "1.", "1e", "18446744073709551616"}) {
+        auto malformed = encoded;
+        const auto position = malformed.find(std::to_string(large_id));
+        ASSERT_NE(position, std::string::npos);
+        malformed.replace(position, std::to_string(large_id).size(), bad_number);
+        EXPECT_FALSE(aetherion::serialization::deserializeScene(malformed));
+    }
+}
+
+TEST(SceneSerialization, EscapesAllControlCharactersInBodyNames) {
+    aetherion::serialization::SceneDocument document;
+    const std::string name = std::string{"control"} + '\b' + '\f' + char{1};
+    ASSERT_TRUE(document.scene.createBody({.name = name, .mass_kg = 1.0, .radius_m = 1.0}));
+    const auto encoded = aetherion::serialization::serializeScene(document);
+    EXPECT_EQ(encoded.find(char{1}), std::string::npos);
+    const auto decoded = aetherion::serialization::deserializeScene(encoded);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(decoded.value().scene.bodies().front().name, name);
+}
+
+TEST(SceneSerialization, InvalidSaveDoesNotReplaceThePreviousValidFile) {
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = std::filesystem::temp_directory_path() /
+                      ("aetherion-save-regression-" + std::to_string(suffix) + ".json");
+    struct Cleanup {
+        std::filesystem::path path;
+        ~Cleanup() {
+            std::error_code ignored;
+            std::filesystem::remove(path, ignored);
+        }
+    } cleanup{path};
+    aetherion::serialization::SceneDocument document;
+    ASSERT_TRUE(aetherion::serialization::saveSceneFile(path, document));
+    document.runtime.physics_dt_s = -1.0;
+    EXPECT_FALSE(aetherion::serialization::saveSceneFile(path, document));
+    const auto restored = aetherion::serialization::loadSceneFile(path);
+    ASSERT_TRUE(restored);
+    EXPECT_GT(restored.value().runtime.physics_dt_s, 0.0);
+    document.runtime.physics_dt_s = 0.25;
+    ASSERT_TRUE(aetherion::serialization::saveSceneFile(path, document));
+    EXPECT_DOUBLE_EQ(aetherion::serialization::loadSceneFile(path).value().runtime.physics_dt_s,
+                     0.25);
+}
+
+TEST(SceneSerialization, RejectsUnsafePresentationAndDeeplyNestedInput) {
+    aetherion::serialization::SceneDocument document;
+    document.visualization.field_visualization.vectors.resolution = 0;
+    EXPECT_FALSE(aetherion::serialization::deserializeScene(
+        aetherion::serialization::serializeScene(document)));
+    document.visualization = {};
+    document.visualization.meters_to_render_units = -1.0;
+    EXPECT_FALSE(aetherion::serialization::deserializeScene(
+        aetherion::serialization::serializeScene(document)));
+    EXPECT_FALSE(aetherion::serialization::deserializeScene(std::string(1000, '[') + "0" +
+                                                            std::string(1000, ']')));
+}
+
+TEST(SceneSerialization, DecodesUnicodeSurrogatePairsAndRejectsIsolatedSurrogates) {
+    aetherion::serialization::SceneDocument document;
+    ASSERT_TRUE(document.scene.createBody({.name = "UNICODE", .mass_kg = 1.0, .radius_m = 1.0}));
+    auto encoded = aetherion::serialization::serializeScene(document);
+    const auto position = encoded.find("UNICODE");
+    ASSERT_NE(position, std::string::npos);
+    auto valid = encoded;
+    valid.replace(position, 7U, "\\u0041\\uD83D\\uDE80");
+    const auto decoded = aetherion::serialization::deserializeScene(valid);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(decoded.value().scene.bodies().front().name, "A\xF0\x9F\x9A\x80");
+    encoded.replace(position, 7U, "\\uD800");
+    EXPECT_FALSE(aetherion::serialization::deserializeScene(encoded));
+}
+
+TEST(SceneSerialization, LegacyIntegralExponentIdsRemainSupportedBelowTheExactIntegerBoundary) {
+    aetherion::serialization::SceneDocument document;
+    ASSERT_TRUE(document.scene.importBody(
+        {.id = 1000U, .name = "legacy", .mass_kg = 1.0, .radius_m = 1.0}));
+    auto encoded = aetherion::serialization::serializeScene(document);
+    const auto position = encoded.find("\"id\":1000");
+    ASSERT_NE(position, std::string::npos);
+    encoded.replace(position, 9U, "\"id\":1e3");
+    const auto decoded = aetherion::serialization::deserializeScene(encoded);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(decoded.value().scene.bodies().front().id, 1000U);
+}
 
 TEST(SceneSerialization, ElectromagneticAndVisualizationSettingsRoundTrip) {
     aetherion::serialization::SceneDocument original;

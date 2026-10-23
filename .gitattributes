@@ -1,0 +1,6 @@
+# Keep first-party text reproducible across Windows, WSL, and CI checkouts.
+* text=auto eol=lf
+*.docx binary
+*.png binary
+*.jpg binary
+*.pdf binary

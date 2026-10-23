@@ -1,3 +1,7 @@
+/** @file
+ * GLFW/OpenGL resource ownership, instanced rendering, field display, and viewport-only input
+ * callbacks.
+ */
 #include "aetherion/renderer/opengl_backend.hpp"
 
 #include <glad/gl.h>
@@ -143,6 +147,9 @@ class OpenGlRenderer::Impl final {
     ~Impl() { shutdown(); }
 
     core::Status initialize(int width, int height, std::string_view title, bool visible) {
+        if (glfw_initialized_)
+            return core::Error{core::ErrorCode::invalid_argument,
+                               "renderer is already initialized"};
         if (width <= 0 || height <= 0 || title.empty()) {
             return core::Error{core::ErrorCode::invalid_argument,
                                "renderer requires positive dimensions and a non-empty title"};
@@ -167,6 +174,7 @@ class OpenGlRenderer::Impl final {
             return core::Error{core::ErrorCode::platform_failure,
                                "OpenGL 4.1 function loading failed"};
         }
+        gl_loaded_ = true;
         glfwSwapInterval(1);
         glfwSetWindowUserPointer(window_, this);
         glfwSetCursorPosCallback(window_, cursorCallback);
@@ -197,6 +205,9 @@ class OpenGlRenderer::Impl final {
         if (window_ == nullptr) {
             return core::Error{core::ErrorCode::platform_failure, "renderer is not initialized"};
         }
+        const auto validation = validateRenderSettings(settings);
+        if (!validation)
+            return validation;
         active_camera_ = &camera;
         int width = 0;
         int height = 0;
@@ -819,16 +830,19 @@ class OpenGlRenderer::Impl final {
     void shutdown() noexcept {
         if (window_ != nullptr) {
             glfwMakeContextCurrent(window_);
-            glDeleteBuffers(1, &grid_vbo_);
-            glDeleteVertexArrays(1, &grid_vao_);
-            glDeleteBuffers(1, &trail_vbo_);
-            glDeleteVertexArrays(1, &trail_vao_);
-            glDeleteBuffers(1, &instance_vbo_);
-            glDeleteBuffers(1, &sphere_ebo_);
-            glDeleteBuffers(1, &sphere_vbo_);
-            glDeleteVertexArrays(1, &sphere_vao_);
-            glDeleteProgram(grid_program_);
-            glDeleteProgram(sphere_program_);
+            // Function pointers are unavailable if initialization stopped during GL loading.
+            if (gl_loaded_) {
+                glDeleteBuffers(1, &grid_vbo_);
+                glDeleteVertexArrays(1, &grid_vao_);
+                glDeleteBuffers(1, &trail_vbo_);
+                glDeleteVertexArrays(1, &trail_vao_);
+                glDeleteBuffers(1, &instance_vbo_);
+                glDeleteBuffers(1, &sphere_ebo_);
+                glDeleteBuffers(1, &sphere_vbo_);
+                glDeleteVertexArrays(1, &sphere_vao_);
+                glDeleteProgram(grid_program_);
+                glDeleteProgram(sphere_program_);
+            }
             glfwDestroyWindow(window_);
             window_ = nullptr;
         }
@@ -841,6 +855,7 @@ class OpenGlRenderer::Impl final {
     GLFWwindow* window_{};
     Camera* active_camera_{};
     bool glfw_initialized_{};
+    bool gl_loaded_{};
     bool orbiting_{};
     bool panning_{};
     bool left_pressed_in_scene_{};
@@ -887,7 +902,13 @@ core::Status OpenGlRenderer::initialize(int width, int height, std::string_view 
 core::Status OpenGlRenderer::render(const core::Scene& scene, Camera& camera,
                                     const RenderSettings& settings,
                                     const physics::fields::IFieldProvider* fields) {
-    return impl_->render(scene, camera, settings, fields);
+    try {
+        return impl_->render(scene, camera, settings, fields);
+    } catch (const std::exception& error) {
+        return core::Error{core::ErrorCode::numerical_failure,
+                           std::string{"scene cannot be represented for rendering: "} +
+                               error.what()};
+    }
 }
 
 void OpenGlRenderer::present() { impl_->present(); }

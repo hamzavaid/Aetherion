@@ -1,3 +1,4 @@
+// Analytical Coulomb magnitude/sign, charge superposition, zero charges, and source guards.
 #include "aetherion/physics/em/electrostatics.hpp"
 
 #include <gtest/gtest.h>

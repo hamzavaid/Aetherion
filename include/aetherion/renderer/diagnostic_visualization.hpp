@@ -1,3 +1,6 @@
+/** @file
+ * Graphics-free generation of bounded motion arrows and field-probe markers; never changes physics.
+ */
 #pragma once
 
 #include <optional>

@@ -1,5 +1,10 @@
+/** @file
+ * Classical four-stage Runge-Kutta particle integration with restoration after rejected force
+ * evaluations.
+ */
 #include "aetherion/physics/integrators/rk4.hpp"
 
+#include "aetherion/core/state_transaction.hpp"
 #include <cmath>
 
 namespace aetherion::physics {
@@ -44,6 +49,7 @@ core::Status Rk4Integrator::step(core::Scene& scene, double dt_s,
         return core::Error{core::ErrorCode::invalid_argument,
                            "RK4 requires a positive finite dt and acceleration evaluator"};
     }
+    core::StateTransaction transaction(scene);
     resize(scene.size());
     for (std::size_t index = 0; index < scene.size(); ++index) {
         initial_[index] = scene.bodies()[index].state;
@@ -97,6 +103,8 @@ core::Status Rk4Integrator::step(core::Scene& scene, double dt_s,
     status = evaluate_acceleration(scene);
     if (!status)
         restore(scene);
+    else
+        transaction.commit();
     return status;
 }
 

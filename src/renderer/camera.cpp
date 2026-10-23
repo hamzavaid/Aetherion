@@ -1,8 +1,13 @@
+/** @file
+ * Double-precision orbit/orthographic camera with world-meter targets and angle-derived viewing
+ * directions.
+ */
 #include "aetherion/renderer/camera.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <stdexcept>
 
@@ -11,9 +16,7 @@ namespace {
 
 constexpr double half_pi = 1.5707963267948966;
 
-math::Vec3d forward(const Camera& camera) {
-    return (camera.targetWorld() - camera.positionWorld()).normalized();
-}
+math::Vec3d forward(const Camera& camera) { return camera.forwardDirection(); }
 
 Mat4f multiply(const Mat4f& lhs, const Mat4f& rhs) {
     Mat4f result{};
@@ -24,6 +27,15 @@ Mat4f multiply(const Mat4f& lhs, const Mat4f& rhs) {
             }
         }
     }
+    return result;
+}
+
+// Projection coefficients must remain representable before they reach OpenGL uniforms.
+Mat4f checkedProjection(const Mat4f& projection, const Mat4f& view) {
+    const auto result = multiply(projection, view);
+    if (!std::all_of(result.begin(), result.end(),
+                     [](float value) { return std::isfinite(value); }))
+        throw std::overflow_error("camera projection exceeds GPU float range");
     return result;
 }
 
@@ -59,7 +71,9 @@ void Camera::pan(double horizontal_m, double vertical_m) noexcept {
     const auto direction = forward(*this);
     const auto right = math::cross(direction, {0.0, 1.0, 0.0}).normalized();
     const auto up = math::cross(right, direction).normalized();
-    target_world_m_ += horizontal_m * right + vertical_m * up;
+    const auto candidate = target_world_m_ + horizontal_m * right + vertical_m * up;
+    if (candidate.isFinite())
+        target_world_m_ = candidate;
 }
 
 void Camera::zoom(double logarithmic_delta) noexcept {
@@ -76,7 +90,7 @@ void Camera::focus(const math::Vec3d& target_world_m, double bounding_radius_m) 
         throw std::invalid_argument("camera focus requires finite target and positive radius in m");
     }
     target_world_m_ = target_world_m;
-    distance_m_ = std::max(2.5 * bounding_radius_m, 1.0e-6);
+    distance_m_ = 2.5 * std::clamp(bounding_radius_m, 4.0e-7, 4.0e19);
 }
 
 void Camera::setTargetWorld(const math::Vec3d& target_world_m) {
@@ -95,11 +109,14 @@ void Camera::reset() noexcept {
     two_dimensional_ = false;
 }
 
+math::Vec3d Camera::forwardDirection() const noexcept {
+    const double horizontal = std::cos(pitch_rad_);
+    return {-horizontal * std::sin(yaw_rad_), -std::sin(pitch_rad_),
+            -horizontal * std::cos(yaw_rad_)};
+}
+
 math::Vec3d Camera::positionWorld() const noexcept {
-    const double horizontal = distance_m_ * std::cos(pitch_rad_);
-    return target_world_m_ + math::Vec3d{horizontal * std::sin(yaw_rad_),
-                                         distance_m_ * std::sin(pitch_rad_),
-                                         horizontal * std::cos(yaw_rad_)};
+    return target_world_m_ - forwardDirection() * distance_m_;
 }
 
 Ray Camera::rayFromNdc(double x_ndc, double y_ndc, double aspect_ratio) const {
@@ -150,6 +167,9 @@ Mat4f Camera::viewProjection(double aspect_ratio, double meters_to_render_units)
                         0.0F,
                         1.0F};
     const double rendered_distance = distance_m_ * meters_to_render_units;
+    if (!std::isfinite(rendered_distance) || rendered_distance <= 0.0 ||
+        rendered_distance > static_cast<double>(std::numeric_limits<float>::max()))
+        throw std::overflow_error("camera distance exceeds finite render range");
     // Camera-relative coordinates permit the clip range to scale with the selected unit mapping.
     // A fixed render-unit floor clips meter-scale scenes after an astronomical preset uses 1e-9.
     const double near_plane = std::max(rendered_distance * 1.0e-6, 1.0e-30);
@@ -164,7 +184,7 @@ Mat4f Camera::viewProjection(double aspect_ratio, double meters_to_render_units)
         orthographic[10] = static_cast<float>(-2.0 / (far_plane - near_plane));
         orthographic[14] = static_cast<float>(-(far_plane + near_plane) / (far_plane - near_plane));
         orthographic[15] = 1.0F;
-        return multiply(orthographic, view);
+        return checkedProjection(orthographic, view);
     }
     Mat4f projection{};
     projection[0] = static_cast<float>(scale / aspect_ratio);
@@ -172,7 +192,7 @@ Mat4f Camera::viewProjection(double aspect_ratio, double meters_to_render_units)
     projection[10] = static_cast<float>((far_plane + near_plane) / (near_plane - far_plane));
     projection[11] = -1.0F;
     projection[14] = static_cast<float>((2.0 * far_plane * near_plane) / (near_plane - far_plane));
-    return multiply(projection, view);
+    return checkedProjection(projection, view);
 }
 
 } // namespace aetherion::renderer

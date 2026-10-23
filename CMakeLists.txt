@@ -15,6 +15,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Formatting is optional for consumers, but available as a reproducible quality gate in CI.
+find_program(CLANG_FORMAT_EXE NAMES clang-format)
+if(CLANG_FORMAT_EXE)
+  file(GLOB_RECURSE AETHERION_FORMAT_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+  add_custom_target(format-check
+    COMMAND "${CLANG_FORMAT_EXE}" --dry-run --Werror ${AETHERION_FORMAT_SOURCES}
+    COMMENT "Checking first-party C++ formatting"
+    VERBATIM)
+endif()
+
 if(AETHERION_ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy REQUIRED)
   set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
@@ -160,4 +173,9 @@ if(AETHERION_BUILD_TESTS)
   )
   FetchContent_MakeAvailable(googletest)
   add_subdirectory(tests)
+  if(AETHERION_BUILD_RENDERER)
+    add_test(NAME RendererSmoke COMMAND aetherion_renderer_smoke)
+    add_test(NAME EngineeringUiSmoke COMMAND aetherion_ui_smoke)
+    set_tests_properties(RendererSmoke EngineeringUiSmoke PROPERTIES TIMEOUT 60)
+  endif()
 endif()

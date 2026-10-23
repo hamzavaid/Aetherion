@@ -1,3 +1,6 @@
+/** @file
+ * World-space ray/sphere picking using display radii and numerically stable transverse distances.
+ */
 #include "aetherion/renderer/picking.hpp"
 
 #include <algorithm>
@@ -25,12 +28,15 @@ std::optional<PickResult> pickBody(const core::Scene& scene, const Ray& ray,
         const double projection = math::dot(offset, direction);
         const double radius_m =
             std::max(body.radius_m * settings.radius_scale, settings.minimum_radius_m);
-        const double discriminant =
-            projection * projection - (offset.squaredNorm() - radius_m * radius_m);
-        if (discriminant < 0.0) {
+        // Subtract the longitudinal component before squaring: b²-|offset|² loses the
+        // transverse distance entirely when small objects are astronomically far away.
+        const double transverse_distance = (offset - direction * projection).norm();
+        if (!std::isfinite(radius_m) || !std::isfinite(transverse_distance) ||
+            transverse_distance > radius_m) {
             continue;
         }
-        const double root = std::sqrt(discriminant);
+        const double ratio = transverse_distance / radius_m;
+        const double root = radius_m * std::sqrt(std::max(0.0, (1.0 - ratio) * (1.0 + ratio)));
         double distance = -projection - root;
         if (distance < 0.0) {
             distance = -projection + root;
@@ -59,11 +65,12 @@ std::optional<ProbePickResult> pickProbe(const std::vector<core::FieldProbe>& pr
             continue;
         const auto offset = ray.origin - probe.position_m;
         const double projection = math::dot(offset, direction);
-        const double discriminant =
-            projection * projection - (offset.squaredNorm() - marker_radius_m * marker_radius_m);
-        if (discriminant < 0.0)
+        const double transverse_distance = (offset - direction * projection).norm();
+        if (!std::isfinite(transverse_distance) || transverse_distance > marker_radius_m)
             continue;
-        const double root = std::sqrt(discriminant);
+        const double ratio = transverse_distance / marker_radius_m;
+        const double root =
+            marker_radius_m * std::sqrt(std::max(0.0, (1.0 - ratio) * (1.0 + ratio)));
         double distance = -projection - root;
         if (distance < 0.0)
             distance = -projection + root;

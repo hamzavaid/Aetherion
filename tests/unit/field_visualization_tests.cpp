@@ -1,3 +1,4 @@
+// Field lattice geometry, direction, scaling, line budgets, and safe trace termination.
 #include "aetherion/renderer/field_visualization.hpp"
 
 #include <algorithm>
@@ -27,6 +28,31 @@ class OutOfPlaneProvider final : public physics::fields::IFieldProvider {
     std::uint64_t revision() const noexcept override { return 2U; }
 };
 } // namespace
+
+TEST(FieldVisualization, EveryPlaneSamplesBothOfItsAxes) {
+    UniformProvider provider;
+    renderer::FieldVisualizationSettings settings;
+    settings.vectors.resolution = 3;
+    for (const auto geometry :
+         {renderer::SamplingGeometry::plane_xy, renderer::SamplingGeometry::plane_xz,
+          renderer::SamplingGeometry::plane_yz}) {
+        settings.vectors.geometry = geometry;
+        EXPECT_EQ(renderer::sampleObservedField(provider, settings, 0.0).size(), 9U);
+    }
+}
+
+TEST(FieldLines, BidirectionalTraceHonorsOneTotalLengthBudget) {
+    UniformProvider provider;
+    renderer::FieldVisualizationSettings settings;
+    settings.lines.maximum_length_m = 1.0;
+    const auto lines = renderer::traceFieldLines(provider, settings, {{0.0, 0.0, 0.0}}, 0.0);
+    ASSERT_EQ(lines.size(), 1U);
+    double length = 0.0;
+    const auto& points = lines.front().points_m;
+    for (std::size_t index = 1; index < points.size(); ++index)
+        length += (points[index] - points[index - 1U]).norm();
+    EXPECT_LE(length, 1.0 + 1.0e-14);
+}
 
 TEST(FieldVisualization, VectorSamplingSupportsPlanesVolumesAndNormalization) {
     UniformProvider provider;

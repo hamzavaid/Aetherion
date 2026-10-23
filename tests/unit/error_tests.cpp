@@ -1,3 +1,4 @@
+// Value/error discrimination and safe access contracts.
 #include "aetherion/core/error.hpp"
 
 #include <gtest/gtest.h>

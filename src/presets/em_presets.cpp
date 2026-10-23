@@ -1,3 +1,7 @@
+/** @file
+ * Deterministic charge, magnetic, and propagation-delay demonstrations with SI state and display
+ * defaults.
+ */
 #include "aetherion/presets/em_presets.hpp"
 
 #include <numbers>

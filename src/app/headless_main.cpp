@@ -1,3 +1,7 @@
+/** @file
+ * Headless Earth-like orbit validation executable; reports finite numerical invariants without
+ * graphics.
+ */
 #include "aetherion/core/simulation.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
 

@@ -1,3 +1,6 @@
+/** @file
+ * Runtime command boundaries, playback, presets, and in-session checkpoint orchestration.
+ */
 #include "aetherion/core/simulation_controller.hpp"
 
 #include <algorithm>
@@ -33,6 +36,9 @@ void SimulationController::applyCommandsAtBoundary() {
 }
 
 Status SimulationController::update(double real_delta_s) {
+    if (!std::isfinite(real_delta_s) || real_delta_s < 0.0)
+        return Error{ErrorCode::invalid_argument,
+                     "frame duration must be finite non-negative seconds"};
     Status step_status = success();
     if (!playing_) {
         applyCommandsAtBoundary();
@@ -43,12 +49,17 @@ Status SimulationController::update(double real_delta_s) {
     // timestep and history-capacity edits atomic and avoids stepping with the preceding dt.
     applyCommandsAtBoundary();
     synchronizeClockSettings();
-    static_cast<void>(clock_.advance(real_delta_s, [&](double dt_s) {
-        if (!step_status)
-            return;
-        simulation_.setPhysicsDt(dt_s);
-        step_status = simulation_.step();
-    }));
+    try {
+        static_cast<void>(clock_.advance(real_delta_s, [&](double dt_s) -> bool {
+            if (!step_status)
+                return false;
+            simulation_.setPhysicsDt(dt_s);
+            step_status = simulation_.step();
+            return static_cast<bool>(step_status);
+        }));
+    } catch (const std::overflow_error& error) {
+        return Error{ErrorCode::numerical_failure, error.what()};
+    }
     synchronizePhysicsSettings();
     synchronizeClockSettings();
     return step_status;
@@ -84,6 +95,8 @@ Status SimulationController::restoreCheckpoint(CheckpointId id) {
 }
 
 Status SimulationController::loadState(Scene scene, RuntimeSettings settings) {
+    if (!physics::isValidIntegrator(settings.integrator))
+        return Error{ErrorCode::invalid_argument, "unknown particle integrator"};
     if (!std::isfinite(settings.physics_dt_s) || settings.physics_dt_s <= 0.0 ||
         !std::isfinite(settings.time_scale) || settings.time_scale < 0.0 ||
         settings.max_substeps == 0U) {

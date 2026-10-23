@@ -1,11 +1,16 @@
+/** @file
+ * Schema-v1 SI scene persistence with strict bounded JSON parsing and staged save replacement.
+ */
 #include "aetherion/serialization/scene_serialization.hpp"
 #include "aetherion/physics/em/retarded_fields.hpp"
 
+#include <array>
 #include <charconv>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <locale>
 #include <map>
 #include <sstream>
 #include <stdexcept>
@@ -19,16 +24,23 @@ namespace aetherion::serialization {
 namespace {
 
 struct Json;
+// Preserve the token as well as its floating-point value: entity IDs must not round at 2^53.
+struct JsonNumber {
+    std::string token;
+    double approximate{};
+};
 using Object = std::map<std::string, Json>;
 using Array = std::vector<Json>;
 struct Json {
-    std::variant<std::nullptr_t, bool, double, std::string, Array, Object> value;
+    std::variant<std::nullptr_t, bool, JsonNumber, std::string, Array, Object> value;
 };
 
 class Parser final {
   public:
     explicit Parser(std::string_view text) : text_(text) {}
     Json parse() {
+        if (text_.size() > 16U * 1024U * 1024U)
+            fail("scene JSON exceeds the 16 MiB input limit");
         auto value = parseValue();
         whitespace();
         if (position_ != text_.size())
@@ -52,6 +64,14 @@ class Parser final {
         return false;
     }
     Json parseValue() {
+        if (depth_ >= 64U)
+            fail("JSON nesting exceeds the 64-level limit");
+        // Scope-bound depth tracking also unwinds correctly after a parse error.
+        struct DepthGuard {
+            std::size_t& depth;
+            explicit DepthGuard(std::size_t& value) : depth(value) { ++depth; }
+            ~DepthGuard() { --depth; }
+        } guard(depth_);
         whitespace();
         if (position_ >= text_.size())
             fail("unexpected end of JSON");
@@ -128,28 +148,107 @@ class Parser final {
                     result.push_back('\r');
                 else if (escaped == 't')
                     result.push_back('\t');
+                else if (escaped == 'b')
+                    result.push_back('\b');
+                else if (escaped == 'f')
+                    result.push_back('\f');
+                else if (escaped == 'u')
+                    appendUnicode(result);
                 else
                     fail("unsupported JSON string escape");
             } else {
+                if (static_cast<unsigned char>(character) < 0x20U)
+                    fail("unescaped control character in JSON string");
                 result.push_back(character);
             }
         }
         fail("unterminated JSON string");
     }
-    double parseNumber() {
+    // Decode JSON UTF-16 escapes to UTF-8; reject isolated surrogate code units.
+    unsigned hexCodeUnit() {
+        unsigned value = 0U;
+        for (unsigned digit = 0; digit < 4U; ++digit) {
+            if (position_ == text_.size())
+                fail("incomplete Unicode escape");
+            const char character = text_[position_++];
+            value *= 16U;
+            if (character >= '0' && character <= '9')
+                value += static_cast<unsigned>(character - '0');
+            else if (character >= 'a' && character <= 'f')
+                value += static_cast<unsigned>(character - 'a') + 10U;
+            else if (character >= 'A' && character <= 'F')
+                value += static_cast<unsigned>(character - 'A') + 10U;
+            else
+                fail("invalid Unicode escape");
+        }
+        return value;
+    }
+    void appendUnicode(std::string& result) {
+        unsigned codepoint = hexCodeUnit();
+        if (codepoint >= 0xd800U && codepoint <= 0xdbffU) {
+            if (text_.substr(position_, 2U) != "\\u")
+                fail("missing low surrogate");
+            position_ += 2U;
+            const unsigned low = hexCodeUnit();
+            if (low < 0xdc00U || low > 0xdfffU)
+                fail("invalid low surrogate");
+            codepoint = 0x10000U + (codepoint - 0xd800U) * 1024U + low - 0xdc00U;
+        } else if (codepoint >= 0xdc00U && codepoint <= 0xdfffU)
+            fail("isolated low surrogate");
+        if (codepoint <= 0x7fU)
+            result.push_back(static_cast<char>(codepoint));
+        else {
+            const unsigned bytes = codepoint <= 0x7ffU ? 2U : (codepoint <= 0xffffU ? 3U : 4U);
+            const unsigned prefix = bytes == 2U ? 0xc0U : (bytes == 3U ? 0xe0U : 0xf0U);
+            result.push_back(static_cast<char>(prefix | (codepoint >> (6U * (bytes - 1U)))));
+            for (unsigned index = bytes - 1U; index > 0U; --index)
+                result.push_back(
+                    static_cast<char>(0x80U | ((codepoint >> (6U * (index - 1U))) & 0x3fU)));
+        }
+    }
+    JsonNumber parseNumber() {
         whitespace();
-        const char* begin = text_.data() + position_;
-        const char* end = text_.data() + text_.size();
+        const auto start = position_;
+        auto digit = [&] {
+            return position_ < text_.size() && text_[position_] >= '0' && text_[position_] <= '9';
+        };
+        if (position_ < text_.size() && text_[position_] == '-')
+            ++position_;
+        if (!digit())
+            fail("expected JSON number");
+        if (text_[position_] == '0')
+            ++position_;
+        else
+            while (digit())
+                ++position_;
+        if (position_ < text_.size() && text_[position_] == '.') {
+            ++position_;
+            if (!digit())
+                fail("JSON fraction requires digits");
+            while (digit())
+                ++position_;
+        }
+        if (position_ < text_.size() && (text_[position_] == 'e' || text_[position_] == 'E')) {
+            ++position_;
+            if (position_ < text_.size() && (text_[position_] == '+' || text_[position_] == '-'))
+                ++position_;
+            if (!digit())
+                fail("JSON exponent requires digits");
+            while (digit())
+                ++position_;
+        }
+        const char* begin = text_.data() + start;
+        const char* end = text_.data() + position_;
         double result = 0.0;
         const auto parsed = std::from_chars(begin, end, result);
-        if (parsed.ec != std::errc{} || parsed.ptr == begin || !std::isfinite(result))
+        if (parsed.ec != std::errc{} || parsed.ptr != end || !std::isfinite(result))
             fail("invalid finite JSON number");
-        position_ += static_cast<std::size_t>(parsed.ptr - begin);
-        return result;
+        return {std::string(begin, end), result};
     }
 
     std::string_view text_;
     std::size_t position_{};
+    std::size_t depth_{};
 };
 
 const Object& object(const Json& value) {
@@ -171,10 +270,10 @@ const Json& member(const Object& value, const char* key) {
     return found->second;
 }
 double number(const Object& value, const char* key) {
-    const auto* result = std::get_if<double>(&member(value, key).value);
-    if (result == nullptr || !std::isfinite(*result))
+    const auto* result = std::get_if<JsonNumber>(&member(value, key).value);
+    if (result == nullptr || !std::isfinite(result->approximate))
         throw std::runtime_error(std::string{"expected finite JSON number: "} + key);
-    return *result;
+    return result->approximate;
 }
 bool boolean(const Object& value, const char* key) {
     const auto* result = std::get_if<bool>(&member(value, key).value);
@@ -198,11 +297,22 @@ std::string string(const Object& value, const char* key) {
     return *result;
 }
 std::size_t sizeValue(const Object& value, const char* key) {
-    const double input = number(value, key);
-    if (input < 0.0 || std::floor(input) != input ||
-        input > static_cast<double>(std::numeric_limits<std::size_t>::max()))
+    const auto* input = std::get_if<JsonNumber>(&member(value, key).value);
+    if (input == nullptr)
+        throw std::runtime_error(std::string{"expected integer: "} + key);
+    std::size_t result{};
+    const auto parsed =
+        std::from_chars(input->token.data(), input->token.data() + input->token.size(), result);
+    // Schema-v1 compatibility: integral decimal/exponent tokens remain accepted below binary64's
+    // exact-integer boundary. Larger IDs must use an exact integer token to avoid rounding.
+    if (input->token.find_first_of(".eE") != std::string::npos && input->approximate >= 0.0 &&
+        input->approximate < 9'007'199'254'740'992.0 &&
+        input->approximate <= static_cast<double>(std::numeric_limits<std::size_t>::max()) &&
+        std::floor(input->approximate) == input->approximate)
+        return static_cast<std::size_t>(input->approximate);
+    if (parsed.ec != std::errc{} || parsed.ptr != input->token.data() + input->token.size())
         throw std::runtime_error(std::string{"expected non-negative integer: "} + key);
-    return static_cast<std::size_t>(input);
+    return result;
 }
 math::Vec3d vector(const Json& value) {
     const auto& values = array(value);
@@ -211,10 +321,10 @@ math::Vec3d vector(const Json& value) {
     math::Vec3d result;
     double* destinations[] = {&result.x, &result.y, &result.z};
     for (std::size_t index = 0; index < 3U; ++index) {
-        const auto* component = std::get_if<double>(&values[index].value);
-        if (component == nullptr || !std::isfinite(*component))
+        const auto* component = std::get_if<JsonNumber>(&values[index].value);
+        if (component == nullptr || !std::isfinite(component->approximate))
             throw std::runtime_error("3D vector components must be finite numbers");
-        *destinations[index] = *component;
+        *destinations[index] = component->approximate;
     }
     return result;
 }
@@ -238,7 +348,11 @@ void writeEscaped(std::ostream& output, std::string_view value) {
             output << "\\r";
         else if (character == '\t')
             output << "\\t";
-        else
+        else if (static_cast<unsigned char>(character) < 0x20U) {
+            constexpr char hex[] = "0123456789abcdef";
+            const auto byte = static_cast<unsigned char>(character);
+            output << "\\u00" << hex[byte >> 4U] << hex[byte & 15U];
+        } else
             output << character;
     }
     output << '"';
@@ -262,6 +376,7 @@ template <typename Enum> Enum enumValue(const Object& value, const char* key, in
 
 std::string serializeScene(const SceneDocument& document) {
     std::ostringstream out;
+    out.imbue(std::locale::classic());
     out << std::setprecision(17);
     const auto& runtime = document.runtime;
     const auto& em = runtime.electromagnetism;
@@ -398,6 +513,9 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
         document.runtime.physics_dt_s = number(simulation, "physicsDt");
         document.runtime.time_scale = number(simulation, "timeScale");
         document.runtime.max_substeps = sizeValue(simulation, "maxSubsteps");
+        if (document.runtime.physics_dt_s <= 0.0 || document.runtime.time_scale < 0.0 ||
+            document.runtime.max_substeps == 0U)
+            throw std::runtime_error("invalid saved clock settings");
         document.runtime.gravity_enabled = boolean(simulation, "gravity");
         document.runtime.integrator =
             enumValue<physics::IntegratorKind>(simulation, "integrator", 3);
@@ -436,8 +554,10 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
             body.charge_C = number(body_json, "charge");
             body.radius_m = number(body_json, "radius");
             body.fixed = boolean(body_json, "fixed");
-            body.interactions.bits =
-                static_cast<std::uint32_t>(sizeValue(body_json, "interactions"));
+            const auto interaction_bits = sizeValue(body_json, "interactions");
+            if (interaction_bits > 7U)
+                throw std::runtime_error("invalid interaction mask");
+            body.interactions.bits = static_cast<std::uint32_t>(interaction_bits);
             body.state.position_m = vector(member(body_json, "position"));
             body.state.velocity_mps = vector(member(body_json, "velocity"));
             body.state.acceleration_mps2 = vector(member(body_json, "acceleration"));
@@ -546,6 +666,9 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
                 document.visualization.probes.push_back(std::move(definition));
             }
         }
+        const auto render_status = renderer::validateRenderSettings(document.visualization);
+        if (!render_status)
+            return render_status.error();
         const auto em_status =
             physics::em::validateElectromagneticSettings(document.runtime.electromagnetism);
         if (!em_status)
@@ -563,25 +686,88 @@ core::Result<SceneDocument> deserializeScene(std::string_view json) {
 }
 
 core::Status saveSceneFile(const std::filesystem::path& path, const SceneDocument& document) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output)
+    // Validate before touching the destination. Stage in the same directory so promotion is a
+    // rename rather than a cross-volume copy; preserve an existing save until staging succeeds.
+    try {
+        const auto encoded = serializeScene(document);
+        const auto validation = deserializeScene(encoded);
+        if (!validation)
+            return validation.error();
+        auto staging = path;
+        staging += ".pending";
+        auto backup = path;
+        backup += ".previous";
+        if (std::filesystem::exists(staging) || std::filesystem::exists(backup))
+            return core::Error{core::ErrorCode::platform_failure,
+                               "save sidecar already exists; preserve it before retrying"};
+        std::ofstream output(staging, std::ios::binary | std::ios::trunc);
+        if (!output)
+            return core::Error{core::ErrorCode::platform_failure, "could not stage scene file"};
+        output << encoded;
+        output.close();
+        std::error_code error;
+        if (!output) {
+            std::filesystem::remove(staging, error);
+            return core::Error{core::ErrorCode::platform_failure,
+                               "failed while writing staged scene file"};
+        }
+        const bool had_previous = std::filesystem::exists(path);
+        if (had_previous) {
+            if (!std::filesystem::is_regular_file(path)) {
+                std::filesystem::remove(staging, error);
+                return core::Error{core::ErrorCode::platform_failure,
+                                   "scene destination is not a regular file"};
+            }
+            std::filesystem::rename(path, backup, error);
+            if (error) {
+                std::filesystem::remove(staging, error);
+                return core::Error{core::ErrorCode::platform_failure,
+                                   "could not preserve previous scene save"};
+            }
+        }
+        std::filesystem::rename(staging, path, error);
+        if (error) {
+            if (had_previous)
+                std::filesystem::rename(backup, path, error);
+            std::filesystem::remove(staging, error);
+            return core::Error{
+                core::ErrorCode::platform_failure,
+                "could not promote staged save; any .previous file contains the prior save"};
+        }
+        if (had_previous) {
+            std::filesystem::remove(backup, error);
+            if (error)
+                return core::Error{core::ErrorCode::platform_failure,
+                                   "scene saved, but previous-save sidecar cleanup failed"};
+        }
+        return core::success();
+    } catch (const std::exception& error) {
         return core::Error{core::ErrorCode::platform_failure,
-                           "could not open scene file for write"};
-    output << serializeScene(document);
-    if (!output)
-        return core::Error{core::ErrorCode::platform_failure, "failed while writing scene file"};
-    return core::success();
+                           std::string{"scene save failed: "} + error.what()};
+    }
 }
 
 core::Result<SceneDocument> loadSceneFile(const std::filesystem::path& path) {
+    std::error_code size_error;
+    const auto bytes = std::filesystem::file_size(path, size_error);
+    if (!size_error && bytes > 16U * 1024U * 1024U)
+        return core::Error{core::ErrorCode::invalid_argument, "scene file exceeds 16 MiB"};
     std::ifstream input(path, std::ios::binary);
     if (!input)
         return core::Error{core::ErrorCode::not_found, "could not open scene file"};
-    std::ostringstream content;
-    content << input.rdbuf();
-    if (!input.good() && !input.eof())
+    // Keep the limit effective even if a file grows after the initial file_size check.
+    std::string content;
+    std::array<char, 4096> buffer{};
+    while (input) {
+        input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        const auto count = static_cast<std::size_t>(input.gcount());
+        if (content.size() + count > 16U * 1024U * 1024U)
+            return core::Error{core::ErrorCode::invalid_argument, "scene file exceeds 16 MiB"};
+        content.append(buffer.data(), count);
+    }
+    if (!input.eof())
         return core::Error{core::ErrorCode::platform_failure, "failed while reading scene file"};
-    return deserializeScene(content.str());
+    return deserializeScene(content);
 }
 
 } // namespace aetherion::serialization

@@ -1,3 +1,6 @@
+/** @file
+ * Barycentric two-body and approximate Sun-Earth-Moon Newtonian demonstrations in SI units.
+ */
 #pragma once
 
 #include "aetherion/core/command_queue.hpp"
@@ -19,8 +22,11 @@ struct GravityPreset {
     float body_radius_scale{1.0F};
 };
 
+/// Circular barycentric Sun-Earth orbit; rendering is scaled separately from physical SI state.
 [[nodiscard]] GravityPreset makeEarthSunGravityPreset();
+/// Circular barycentric Earth-Moon orbit in the world XZ plane.
 [[nodiscard]] GravityPreset makeEarthMoonGravityPreset();
+/// Approximate coplanar three-body initial conditions with a fixed Sun, not an ephemeris solution.
 [[nodiscard]] GravityPreset makeSunEarthMoonGravityPreset();
 
 } // namespace aetherion::presets

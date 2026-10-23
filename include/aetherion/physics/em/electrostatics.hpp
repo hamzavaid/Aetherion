@@ -1,3 +1,7 @@
+/** @file
+ * Direct Coulomb interactions and read-only superposition of gravity, electric, and analytic
+ * magnetic fields.
+ */
 #pragma once
 
 #include <cstddef>
@@ -15,6 +19,9 @@ struct ElectrostaticDiagnostics {
 };
 
 /// Direct O(N^2) Coulomb reference solver. It accumulates acceleration in m/s^2.
+/// Pair force is -k*q1*q2*r/(r²+epsilon²)^(3/2) on the first body; r points first to second.
+/// Distances <= the configured guard are skipped/diagnosed. Neutral/masked pairs exert no force;
+/// active dynamic charges require positive mass. Failure restores all entry kinematics.
 class ElectrostaticSolver final {
   public:
     explicit ElectrostaticSolver(ElectromagneticSettings settings = {});

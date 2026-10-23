@@ -1,3 +1,5 @@
+// History wrap/interpolation, typed retarded-time failures, light-travel delays, and allocation
+// bounds.
 #include "aetherion/physics/em/retarded_fields.hpp"
 
 #include <algorithm>

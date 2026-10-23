@@ -1,3 +1,6 @@
+/** @file
+ * World-space ray/sphere picking using display radii and numerically stable transverse distances.
+ */
 #pragma once
 
 #include <optional>

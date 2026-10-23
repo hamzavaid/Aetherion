@@ -1,3 +1,6 @@
+/** @file
+ * Optional body or center-of-mass camera tracking that preserves user orbit and zoom.
+ */
 #pragma once
 
 #include <optional>

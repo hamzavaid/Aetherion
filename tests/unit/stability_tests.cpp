@@ -1,3 +1,4 @@
+// Advisory timestep warnings for resolved and under-resolved orbital motion.
 #include "aetherion/physics/stability_analyzer.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
 

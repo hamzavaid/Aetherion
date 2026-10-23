@@ -1,3 +1,7 @@
+/** @file
+ * Bounded source trajectories and finite-delay Coulomb sampling without extrapolation or radiation
+ * terms.
+ */
 #pragma once
 
 #include <cstdint>

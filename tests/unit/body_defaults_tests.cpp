@@ -1,3 +1,4 @@
+// Context-sensitive interactive charge defaults and non-overlapping placement.
 #include "aetherion/core/body_defaults.hpp"
 
 #include <gtest/gtest.h>

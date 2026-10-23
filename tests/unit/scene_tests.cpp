@@ -1,3 +1,4 @@
+// Body validation, stable entity IDs, deterministic ordering, replacement, and removal.
 #include "aetherion/core/scene.hpp"
 
 #include <gtest/gtest.h>

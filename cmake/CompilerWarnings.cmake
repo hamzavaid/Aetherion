@@ -1,6 +1,7 @@
 function(aetherion_set_project_warnings target)
   if(MSVC)
-    set(warnings /W4 /permissive- /EHsc)
+    # Source files and UI labels are UTF-8 on every platform, independent of Windows code page.
+    set(warnings /W4 /permissive- /EHsc /utf-8)
     if(AETHERION_ENABLE_WARNINGS_AS_ERRORS)
       list(APPEND warnings /WX)
     endif()

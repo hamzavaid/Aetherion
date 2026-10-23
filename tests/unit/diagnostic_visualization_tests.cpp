@@ -1,3 +1,4 @@
+// Finite motion arrows and visible probe data independently of OpenGL.
 #include "aetherion/renderer/diagnostic_visualization.hpp"
 
 #include <gtest/gtest.h>

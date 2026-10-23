@@ -1,3 +1,4 @@
+// Reference-frame observations, center of mass, fixed probes, and transient histories.
 #include "aetherion/core/scientific_analysis.hpp"
 
 #include <gtest/gtest.h>
@@ -6,6 +7,17 @@
 #include "aetherion/physics/em/electrostatics.hpp"
 
 using namespace aetherion;
+
+TEST(ScientificAnalysis, MassCenterAvoidsIntermediateMassPositionOverflow) {
+    core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "large",
+                                  .mass_kg = 1.0e200,
+                                  .radius_m = 1.0,
+                                  .state = {.position_m = {1.0e200, 0.0, 0.0}}}));
+    const auto center = core::centerOfMass(scene);
+    ASSERT_TRUE(center);
+    EXPECT_DOUBLE_EQ(center->position_m.x, 1.0e200);
+}
 
 TEST(ScientificAnalysis, MassWeightedCenterAndTranslatingReferenceCoordinates) {
     core::Scene scene;

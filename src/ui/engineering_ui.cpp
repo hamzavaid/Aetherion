@@ -1,3 +1,7 @@
+/** @file
+ * Dockable engineering controls; physical edits use commands and presentation edits are validated
+ * locally.
+ */
 #include "aetherion/ui/engineering_ui.hpp"
 
 #include <imgui.h>
@@ -30,6 +34,9 @@ namespace aetherion::ui {
 EngineeringUi::~EngineeringUi() { shutdown(); }
 
 core::Status EngineeringUi::initialize(void* glfw_window) {
+    if (initialized_)
+        return core::Error{core::ErrorCode::invalid_argument,
+                           "engineering UI is already initialized"};
     if (glfw_window == nullptr) {
         return core::Error{core::ErrorCode::invalid_argument,
                            "engineering UI requires a valid GLFW window"};
@@ -113,6 +120,9 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller,
                                   renderer::Camera& camera) {
     ImGui::Begin("Scene Hierarchy");
     for (const auto& body : controller.scene().bodies()) {
+        // Names are editable/non-unique; widget identity must follow the stable 64-bit entity ID.
+        const auto widget_id = std::to_string(body.id);
+        ImGui::PushID(widget_id.c_str());
         const bool selected = selected_ && *selected_ == body.id;
         if (ImGui::Selectable(body.name.c_str(), selected)) {
             if (selected_ != body.id)
@@ -120,6 +130,7 @@ void EngineeringUi::drawHierarchy(core::SimulationController& controller,
             selected_ = body.id;
             selected_probe_.reset();
         }
+        ImGui::PopID();
     }
     const bool creates_charge = controller.settings().electromagnetism.electrostatics_enabled ||
                                 controller.settings().electromagnetism.magnetic_enabled;
@@ -282,6 +293,8 @@ void EngineeringUi::drawInspector(core::SimulationController& controller, render
 void EngineeringUi::drawSimulationControls(core::SimulationController& controller,
                                            renderer::Camera& camera,
                                            renderer::RenderSettings& render_settings) {
+    // UI presentation edits are transactional just like queued physical state edits.
+    const auto previous_render_settings = render_settings;
     ImGui::Begin("Simulation Controls");
     if (ImGui::Button(controller.isPlaying() ? "Pause" : "Play")) {
         if (!controller.isPlaying())
@@ -291,7 +304,9 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SameLine();
     if (ImGui::Button("Single Step")) {
         position_edits_.clear();
-        static_cast<void>(controller.singleStep());
+        const auto status = controller.singleStep();
+        if (!status)
+            scene_file_status_ = status.error().message;
     }
     ImGui::SameLine();
     if (ImGui::Button("Save"))
@@ -512,6 +527,9 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
         controller.commands().enqueue(
             core::SetIntegratorCommand{static_cast<physics::IntegratorKind>(integrator)});
     }
+    if (magnetic && integrator == static_cast<int>(physics::IntegratorKind::velocity_verlet))
+        ImGui::TextWrapped("Velocity Verlet assumes position-dependent acceleration. Prefer Boris "
+                           "or RK4 for magnetic dynamics.");
     ImGui::SeparatorText("Visualization (does not affect physics)");
     ImGui::Checkbox("Show engineering grid", &render_settings.show_grid);
     ImGui::InputDouble("Render units / meter", &render_settings.meters_to_render_units, 0.0, 0.0,
@@ -777,6 +795,11 @@ void EngineeringUi::drawSimulationControls(core::SimulationController& controlle
     ImGui::SeparatorText("Retarded Electrodynamics Preset");
     if (ImGui::Button("Propagation-delay probes"))
         load_preset(presets::makePropagationDelayPreset());
+    const auto validation = renderer::validateRenderSettings(render_settings);
+    if (!validation) {
+        scene_file_status_ = validation.error().message;
+        render_settings = previous_render_settings;
+    }
     camera.setTwoDimensional(render_settings.field_visualization.planar_2d);
     ImGui::End();
 }
@@ -853,9 +876,11 @@ void EngineeringUi::drawProbes(core::SimulationController& controller,
                 const math::Vec3d candidate{position[0], position[1], position[2]};
                 if (candidate.isFinite()) {
                     probe.position_m = candidate;
-                    static_cast<void>(position_edits_.select(
-                        {core::PositionTargetKind::probe, index}, candidate));
-                    position_edits_.rebase(candidate);
+                    if (selected_probe_ == index) {
+                        static_cast<void>(position_edits_.select(
+                            {core::PositionTargetKind::probe, index}, candidate));
+                        position_edits_.rebase(candidate);
+                    }
                 }
             }
             const auto observation = core::sampleProbe(controller.fieldProvider(), probe,
@@ -1016,6 +1041,11 @@ void EngineeringUi::drawMovementControls(core::SimulationController& controller,
 
 void EngineeringUi::drawDiagnostics(const core::SimulationController& controller) {
     ImGui::Begin("Diagnostics");
+    if (!runtime_error_.empty()) {
+        ImGui::TextWrapped("Runtime error: %s", runtime_error_.c_str());
+        if (ImGui::SmallButton("Dismiss runtime error"))
+            runtime_error_.clear();
+    }
     ImGui::Text("Simulation time: %.9g s", controller.simulationTimeSeconds());
     ImGui::Text("Bodies: %zu", controller.scene().size());
     ImGui::Text("Pending commands: %zu", controller.commands().pendingCount());
@@ -1109,7 +1139,8 @@ void EngineeringUi::drawDiagnostics(const core::SimulationController& controller
         ImGui::Text("Maximum speed drift: %.6g m/s", sample.maximum_speed_drift_mps);
     }
     const auto warnings =
-        physics::analyzeTimestep(controller.scene(), controller.settings().physics_dt_s);
+        physics::analyzeTimestep(controller.scene(), controller.settings().physics_dt_s,
+                                 controller.settings().gravity_enabled);
     for (const auto& warning : warnings) {
         const ImVec4 color = warning.severity == physics::StabilitySeverity::unstable
                                  ? ImVec4{1.0F, 0.25F, 0.2F, 1.0F}

@@ -1,3 +1,6 @@
+/** @file
+ * Camera-scale engineering-grid spacing chosen from bounded 1/2/5 increments in render units.
+ */
 #pragma once
 
 #include <cstddef>

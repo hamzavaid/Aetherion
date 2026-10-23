@@ -1,3 +1,6 @@
+/** @file
+ * Graphics-free field lattices, magnitude slices, and budgeted normalized-tangent RK4 field lines.
+ */
 #include "aetherion/renderer/field_visualization.hpp"
 
 #include <algorithm>
@@ -69,6 +72,25 @@ bool insideRegion(const math::Vec3d& point, const FieldRegion& region) {
 }
 
 void validate(const FieldVisualizationSettings& settings) {
+    const auto valid_enum = [](auto value, int maximum) {
+        const int raw = static_cast<int>(value);
+        return raw >= 0 && raw <= maximum;
+    };
+    if (!valid_enum(settings.mode, 3) || !valid_enum(settings.field, 2) ||
+        !valid_enum(settings.vectors.geometry, 3) || !valid_enum(settings.vectors.scaling, 2) ||
+        settings.lines.automatic_seed_count > 4096U ||
+        settings.lines.custom_seeds_m.size() > 4096U || settings.lines.maximum_steps > 100'000U ||
+        settings.lines.maximum_total_steps > 1'000'000U)
+        throw std::invalid_argument("field visualization enum or work budget is invalid");
+    for (const auto& seed : settings.lines.custom_seeds_m)
+        if (!seed.isFinite())
+            throw std::invalid_argument("field seeds must be finite world meters");
+    for (const auto& color : {settings.colors.electric_vectors, settings.colors.electric_lines,
+                              settings.colors.magnetic_vectors, settings.colors.magnetic_lines,
+                              settings.colors.gravity_vectors, settings.colors.gravity_lines})
+        for (const auto component : color)
+            if (!std::isfinite(component) || component < 0.0F || component > 1.0F)
+                throw std::invalid_argument("field colors must be finite within [0,1]");
     if (!settings.region.center_m.isFinite() || !settings.region.half_extent_m.isFinite() ||
         settings.region.half_extent_m.x <= 0.0 || settings.region.half_extent_m.y <= 0.0 ||
         settings.region.half_extent_m.z <= 0.0 || settings.vectors.resolution < 2U ||
@@ -92,6 +114,9 @@ void validate(const FieldVisualizationSettings& settings) {
 bool unitField(const physics::fields::IFieldProvider& provider,
                const FieldVisualizationSettings& settings, const math::Vec3d& position_m,
                double time_s, double minimum_magnitude, math::Vec3d& direction) {
+    // RK4 intermediate stages must obey the same domain bounds as accepted vertices.
+    if (!position_m.isFinite() || !insideRegion(position_m, settings.region))
+        return false;
     const auto sample = provider.sample(position_m, time_s);
     if (!selectedFieldValid(sample, settings))
         return false;
@@ -106,18 +131,17 @@ bool unitField(const physics::fields::IFieldProvider& provider,
 std::vector<math::Vec3d> traceDirection(const physics::fields::IFieldProvider& provider,
                                         const FieldVisualizationSettings& settings,
                                         const math::Vec3d& seed_m, double time_s, double sign,
-                                        std::size_t& remaining_work) {
+                                        std::size_t& remaining_work, double& remaining_length_m) {
     std::vector<math::Vec3d> points;
     points.push_back(seed_m);
     auto position = seed_m;
-    double length_m = 0.0;
     for (std::size_t step = 0; step < settings.lines.maximum_steps && remaining_work > 0U; ++step) {
         --remaining_work;
         math::Vec3d k1;
         math::Vec3d k2;
         math::Vec3d k3;
         math::Vec3d k4;
-        const double h = sign * settings.lines.step_size_m;
+        const double h = sign * std::min(settings.lines.step_size_m, remaining_length_m);
         if (!unitField(provider, settings, position, time_s, settings.lines.minimum_field_magnitude,
                        k1) ||
             !unitField(provider, settings, position + k1 * (0.5 * h), time_s,
@@ -133,10 +157,10 @@ std::vector<math::Vec3d> traceDirection(const physics::fields::IFieldProvider& p
             break;
         const double segment_length = (next - position).norm();
         if (!std::isfinite(segment_length) || segment_length <= 0.0 ||
-            length_m + segment_length > settings.lines.maximum_length_m) {
+            segment_length > remaining_length_m) {
             break;
         }
-        length_m += segment_length;
+        remaining_length_m -= segment_length;
         points.push_back(next);
         position = next;
     }
@@ -145,7 +169,7 @@ std::vector<math::Vec3d> traceDirection(const physics::fields::IFieldProvider& p
 
 double coordinate(std::size_t index, std::size_t count, double center, double half_extent) {
     const double fraction = static_cast<double>(index) / static_cast<double>(count - 1U);
-    return center - half_extent + 2.0 * half_extent * fraction;
+    return center + half_extent * (2.0 * fraction - 1.0);
 }
 
 void hashDouble(std::uint64_t& hash, double value) noexcept {
@@ -160,6 +184,15 @@ void hashVector(std::uint64_t& hash, const math::Vec3d& value) noexcept {
 }
 
 } // namespace
+
+core::Status validateFieldVisualizationSettings(const FieldVisualizationSettings& settings) {
+    try {
+        validate(settings);
+        return core::success();
+    } catch (const std::invalid_argument& error) {
+        return core::Error{core::ErrorCode::invalid_argument, error.what()};
+    }
+}
 
 FieldVisualizationSettings fitMagnitudePlaneToCamera(FieldVisualizationSettings settings,
                                                      const math::Vec3d& target_m,
@@ -184,7 +217,7 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
     std::vector<FieldVectorGlyph> glyphs;
     const auto count = settings.vectors.resolution;
     const auto geometry = effectiveGeometry(settings);
-    const std::size_t y_count = geometry == SamplingGeometry::volume ? count : 1U;
+    const std::size_t y_count = geometry == SamplingGeometry::plane_xz ? 1U : count;
     const std::size_t z_count = geometry == SamplingGeometry::plane_xy ? 1U : count;
     const std::size_t x_count = geometry == SamplingGeometry::plane_yz ? 1U : count;
     glyphs.reserve(x_count * y_count * z_count);
@@ -209,13 +242,17 @@ std::vector<FieldVectorGlyph> sampleObservedField(const physics::fields::IFieldP
                     magnitude > settings.vectors.maximum_magnitude) {
                     continue;
                 }
-                double length = settings.vectors.visual_length_m;
+                double factor = 1.0;
                 if (settings.vectors.scaling == VectorScaling::linear)
-                    length *= magnitude / settings.vectors.reference_magnitude;
+                    factor = magnitude / settings.vectors.reference_magnitude;
                 if (settings.vectors.scaling == VectorScaling::logarithmic)
-                    length *= std::log10(1.0 + magnitude / settings.vectors.reference_magnitude);
-                length = std::clamp(length, settings.vectors.visual_length_m * 0.02,
-                                    settings.vectors.visual_length_m * 10.0);
+                    factor = std::log1p(magnitude / settings.vectors.reference_magnitude) /
+                             std::log(10.0);
+                // Clamp the dimensionless factor before multiplication, including ratio overflow.
+                const double length =
+                    settings.vectors.visual_length_m * std::clamp(factor, 0.02, 10.0);
+                if (!std::isfinite(length))
+                    continue;
                 glyphs.push_back({position, vector / magnitude, magnitude, length});
             }
         }
@@ -300,17 +337,22 @@ std::vector<TracedFieldLine> traceFieldLines(const physics::fields::IFieldProvid
         if (!planar_seed.isFinite() || !insideRegion(planar_seed, settings.region))
             continue;
         std::vector<math::Vec3d> combined;
+        double remaining_length_m = settings.lines.maximum_length_m;
         if (settings.lines.trace_backward) {
-            auto backward =
-                traceDirection(provider, settings, planar_seed, time_s, -1.0, remaining_work);
+            double backward_budget_m =
+                remaining_length_m * (settings.lines.trace_forward ? 0.5 : 1.0);
+            const double initial_backward_budget_m = backward_budget_m;
+            auto backward = traceDirection(provider, settings, planar_seed, time_s, -1.0,
+                                           remaining_work, backward_budget_m);
+            remaining_length_m -= initial_backward_budget_m - backward_budget_m;
             combined.assign(backward.rbegin(), backward.rend());
             if (!combined.empty())
                 combined.pop_back();
         }
         combined.push_back(planar_seed);
         if (settings.lines.trace_forward) {
-            auto forward =
-                traceDirection(provider, settings, planar_seed, time_s, 1.0, remaining_work);
+            auto forward = traceDirection(provider, settings, planar_seed, time_s, 1.0,
+                                          remaining_work, remaining_length_m);
             if (!forward.empty())
                 combined.insert(combined.end(), std::next(forward.begin()), forward.end());
         }

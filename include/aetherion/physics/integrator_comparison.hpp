@@ -1,3 +1,7 @@
+/** @file
+ * Identical-initial-state numerical comparisons; circular references require valid two-body
+ * geometry.
+ */
 #pragma once
 
 #include <cstddef>
@@ -22,6 +26,8 @@ struct IntegratorRun {
     double maximum_momentum_error_kg_mps{};
     double relative_orbit_closure_error{};
     double relative_orbit_reference_error{};
+    /// Circular-reference error is defined only for a nondegenerate two-body circular orbit.
+    bool orbit_reference_valid{};
 };
 
 struct IntegratorComparisonReport {

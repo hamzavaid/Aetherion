@@ -1,3 +1,6 @@
+/** @file
+ * Advisory fixed-timestep resolution checks against active orbital and pair-crossing timescales.
+ */
 #pragma once
 
 #include <string>
@@ -17,6 +20,7 @@ struct StabilityWarning {
 };
 
 /// Checks gravity orbital and crossing timescales; ratios are advisory, not adaptive stepping.
-[[nodiscard]] std::vector<StabilityWarning> analyzeTimestep(const core::Scene& scene, double dt_s);
+[[nodiscard]] std::vector<StabilityWarning> analyzeTimestep(const core::Scene& scene, double dt_s,
+                                                            bool gravity_enabled = true);
 
 } // namespace aetherion::physics

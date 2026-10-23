@@ -1,3 +1,4 @@
+// Many-period gyro stability and speed-drift comparison against Euler.
 #include "aetherion/core/simulation_controller.hpp"
 
 #include <gtest/gtest.h>

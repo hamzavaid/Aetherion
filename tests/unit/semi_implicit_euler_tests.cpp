@@ -1,3 +1,4 @@
+// Velocity-before-position ordering and fixed-body invariance.
 #include "aetherion/physics/integrators/semi_implicit_euler.hpp"
 
 #include <gtest/gtest.h>

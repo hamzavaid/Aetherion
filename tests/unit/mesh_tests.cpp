@@ -1,6 +1,15 @@
+// Sphere topology, unit normals, grid geometry, and bounded generation.
 #include "aetherion/renderer/mesh.hpp"
 
 #include <gtest/gtest.h>
+#include <limits>
+
+TEST(MeshQuality, RejectsUnboundedAllocationsBeforeGeneratingGeometry) {
+    using namespace aetherion::renderer;
+    EXPECT_THROW(static_cast<void>(makeUvSphere(std::numeric_limits<std::uint32_t>::max(), 2)),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(makeEngineeringGrid(1.0e30F, 1.0e-30F)), std::invalid_argument);
+}
 
 #include <cmath>
 

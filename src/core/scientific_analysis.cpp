@@ -1,3 +1,6 @@
+/** @file
+ * Read-only body/probe observations and bounded plot histories in translating world-aligned frames.
+ */
 #include "aetherion/core/scientific_analysis.hpp"
 
 #include <algorithm>
@@ -8,15 +11,16 @@ namespace aetherion::core {
 
 std::optional<MassCenter> centerOfMass(const Scene& scene) {
     MassCenter center;
-    for (const auto& body : scene.bodies()) {
+    for (const auto& body : scene.bodies())
         center.total_mass_kg += body.mass_kg;
-        center.position_m += body.mass_kg * body.state.position_m;
-        center.velocity_mps += body.mass_kg * body.state.velocity_mps;
-    }
     if (!(center.total_mass_kg > 0.0) || !std::isfinite(center.total_mass_kg))
         return std::nullopt;
-    center.position_m /= center.total_mass_kg;
-    center.velocity_mps /= center.total_mass_kg;
+    // Normalize weights first: mass*position can overflow even when its mean is representable.
+    for (const auto& body : scene.bodies()) {
+        const double weight = body.mass_kg / center.total_mass_kg;
+        center.position_m += weight * body.state.position_m;
+        center.velocity_mps += weight * body.state.velocity_mps;
+    }
     if (!center.position_m.isFinite() || !center.velocity_mps.isFinite())
         return std::nullopt;
     return center;
@@ -49,7 +53,8 @@ std::optional<BodyObservation> observeBody(const Scene& scene, EntityId id, Refe
                            .acceleration_mps2 = body->state.acceleration_mps2,
                            .net_force_N = body->mass_kg * body->state.acceleration_mps2,
                            .speed_mps = velocity.norm(),
-                           .kinetic_energy_J = 0.5 * body->mass_kg * velocity.squaredNorm()};
+                           .kinetic_energy_J =
+                               0.5 * body->mass_kg * velocity.norm() * velocity.norm()};
     if (!result.position_m.isFinite() || !result.velocity_mps.isFinite() ||
         !result.acceleration_mps2.isFinite() || !result.net_force_N.isFinite() ||
         !std::isfinite(result.speed_mps) || !std::isfinite(result.kinetic_energy_J))

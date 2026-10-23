@@ -1,3 +1,4 @@
+// Uniform-field superposition and analytical dipole axis samples with source guards.
 #include "aetherion/physics/em/electrostatics.hpp"
 
 #include <gtest/gtest.h>

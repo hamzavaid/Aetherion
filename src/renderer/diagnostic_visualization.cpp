@@ -1,3 +1,6 @@
+/** @file
+ * Graphics-free generation of bounded motion arrows and field-probe markers; never changes physics.
+ */
 #include "aetherion/renderer/diagnostic_visualization.hpp"
 
 #include <algorithm>
@@ -18,7 +21,7 @@ void addGlyph(std::vector<MotionGlyph>& output, MotionGlyphKind kind, const math
         factor = magnitude / reference_magnitude;
     else if (scaling == VectorScaling::logarithmic)
         factor = std::log10(1.0 + magnitude / reference_magnitude);
-    if (!std::isfinite(factor))
+    if (std::isnan(factor))
         return;
     const double length = base_length_m * std::clamp(factor, 0.02, 10.0);
     if (std::isfinite(length) && length > 0.0)

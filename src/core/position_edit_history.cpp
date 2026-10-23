@@ -1,3 +1,6 @@
+/** @file
+ * Bounded undo history for explicit world-frame position edits, separate from simulated motion.
+ */
 #include "aetherion/core/position_edit_history.hpp"
 
 #include <stdexcept>
@@ -41,10 +44,10 @@ void PositionEditHistory::rememberCurrent() {
 }
 
 bool PositionEditHistory::nudge(const math::Vec3d& delta_m) {
-    if (!current_m_ || !delta_m.isFinite() || delta_m.squaredNorm() == 0.0)
+    if (!current_m_ || !delta_m.isFinite() || delta_m == math::Vec3d{})
         return false;
     const auto next = *current_m_ + delta_m;
-    if (!next.isFinite())
+    if (!next.isFinite() || next == *current_m_)
         return false;
     rememberCurrent();
     current_m_ = next;

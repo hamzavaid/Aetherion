@@ -1,3 +1,7 @@
+/** @file
+ * Double-precision Cartesian arithmetic; field names supply units and normalization returns a unit
+ * vector.
+ */
 #pragma once
 
 #include <cstddef>
@@ -17,9 +21,13 @@ struct Vec3d {
     constexpr Vec3d& operator*=(double scalar) noexcept;
     Vec3d& operator/=(double scalar);
 
+    /// Direct dot product; unlike norm(), may overflow/underflow when the square is
+    /// unrepresentable.
     [[nodiscard]] double squaredNorm() const noexcept;
+    /// Scaled Euclidean hypot avoids intermediate squaring overflow/underflow.
     [[nodiscard]] double norm() const noexcept;
     [[nodiscard]] bool isFinite() const noexcept;
+    /// Throws for nonfinite inputs or norm < minimum_norm (same units as components).
     [[nodiscard]] Vec3d normalized(double minimum_norm = 1.0e-15) const;
     [[nodiscard]] constexpr bool operator==(const Vec3d&) const noexcept = default;
 };

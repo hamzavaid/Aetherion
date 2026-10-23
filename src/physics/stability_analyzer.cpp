@@ -1,3 +1,6 @@
+/** @file
+ * Advisory fixed-timestep resolution checks against active orbital and pair-crossing timescales.
+ */
 #include "aetherion/physics/stability_analyzer.hpp"
 
 #include <algorithm>
@@ -10,7 +13,8 @@
 
 namespace aetherion::physics {
 
-std::vector<StabilityWarning> analyzeTimestep(const core::Scene& scene, double dt_s) {
+std::vector<StabilityWarning> analyzeTimestep(const core::Scene& scene, double dt_s,
+                                              bool gravity_enabled) {
     if (!std::isfinite(dt_s) || dt_s <= 0.0) {
         throw std::invalid_argument("stability analysis requires a positive finite timestep in s");
     }
@@ -23,7 +27,10 @@ std::vector<StabilityWarning> analyzeTimestep(const core::Scene& scene, double d
                 bodies[second].state.position_m - bodies[first].state.position_m;
             const double separation_m = relative_position.norm();
             const double total_mass_kg = bodies[first].mass_kg + bodies[second].mass_kg;
-            if (separation_m > 0.0 && total_mass_kg > 0.0) {
+            if (gravity_enabled &&
+                bodies[first].interactions.contains(core::Interaction::gravity) &&
+                bodies[second].interactions.contains(core::Interaction::gravity) &&
+                separation_m > 0.0 && total_mass_kg > 0.0) {
                 const double period_s =
                     2.0 * std::numbers::pi *
                     std::sqrt(separation_m * separation_m * separation_m /

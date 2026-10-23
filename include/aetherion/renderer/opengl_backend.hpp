@@ -1,3 +1,7 @@
+/** @file
+ * GLFW/OpenGL resource ownership, instanced rendering, field display, and viewport-only input
+ * callbacks.
+ */
 #pragma once
 
 #include <memory>

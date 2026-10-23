@@ -1,9 +1,13 @@
+/** @file
+ * Headless composition of instantaneous forces, particle integrators, accepted-state history, and
+ * diagnostics.
+ */
 #include "aetherion/core/simulation.hpp"
 
 #include <cmath>
-#include <optional>
 #include <stdexcept>
 
+#include "aetherion/core/state_transaction.hpp"
 #include "aetherion/physics/integrators/semi_implicit_euler.hpp"
 
 namespace aetherion::core {
@@ -15,16 +19,16 @@ Simulation::Simulation(Scene& scene, SimulationConfig config)
     if (!std::isfinite(config.physics_dt_s) || config.physics_dt_s <= 0.0) {
         throw std::invalid_argument("simulation timestep must be finite and positive in s");
     }
-    static_cast<void>(telemetry_.sample(scene_, 0.0));
+    setIntegrator(config.integrator);
+    recordTelemetry();
 }
 
 Status Simulation::step() {
-    std::optional<Scene> accepted_baseline;
+    core::StateTransaction transaction(scene_);
     if (electromagnetic_settings_.retarded.enabled) {
         const auto record_status = source_histories_.record(scene_, time_s_);
         if (!record_status)
             return record_status;
-        accepted_baseline = scene_;
     }
     const physics::AccelerationFunction evaluate_nonmagnetic = [this](Scene& evaluated_scene) {
         for (auto& body : evaluated_scene.bodies())
@@ -85,26 +89,22 @@ Status Simulation::step() {
     }
     }
     if (!status) {
-        if (accepted_baseline)
-            scene_ = std::move(*accepted_baseline);
         return status;
     }
     const double next_time_s = time_s_ + config_.physics_dt_s;
     if (!std::isfinite(next_time_s) || next_time_s <= time_s_) {
-        if (accepted_baseline)
-            scene_ = std::move(*accepted_baseline);
         return Error{ErrorCode::numerical_failure,
                      "simulation timestep cannot advance finite time"};
     }
     if (electromagnetic_settings_.retarded.enabled) {
         const auto record_status = source_histories_.record(scene_, next_time_s);
         if (!record_status) {
-            scene_ = std::move(*accepted_baseline);
             return record_status;
         }
     }
     time_s_ = next_time_s;
-    static_cast<void>(telemetry_.sample(scene_, time_s_));
+    recordTelemetry();
+    transaction.commit();
     return success();
 }
 
@@ -158,7 +158,19 @@ void Simulation::reset(double time_s) {
     time_s_ = time_s;
     invalidateSourceHistory();
     telemetry_.clear();
-    static_cast<void>(telemetry_.sample(scene_, time_s_));
+    recordTelemetry();
+}
+
+void Simulation::recordTelemetry() {
+    TelemetryForceModel model{
+        .gravity_enabled = gravity_enabled_,
+        .electrostatics_enabled = electromagnetic_settings_.electrostatics_enabled,
+        .electric_softening_m = electromagnetic_settings_.softening_m,
+        .electric_minimum_separation_m = electromagnetic_settings_.minimum_separation_m};
+    for (const auto& source : electromagnetic_settings_.analytic_sources)
+        if (source.kind == physics::em::AnalyticFieldSourceKind::uniform)
+            model.uniform_electric_Vpm += source.electric_Vpm;
+    static_cast<void>(telemetry_.sample(scene_, time_s_, model));
 }
 
 } // namespace aetherion::core

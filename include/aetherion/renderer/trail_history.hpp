@@ -1,3 +1,6 @@
+/** @file
+ * Bounded simulation-time trajectory samples; rewinds clear history and deleted bodies are removed.
+ */
 #pragma once
 
 #include <cstddef>

@@ -1,3 +1,6 @@
+/** @file
+ * Deterministic unit-sphere and engineering-grid topology with allocation and index bounds.
+ */
 #include "aetherion/renderer/mesh.hpp"
 
 #include <cmath>
@@ -7,8 +10,9 @@
 namespace aetherion::renderer {
 
 SphereMesh makeUvSphere(std::uint32_t slices, std::uint32_t stacks) {
-    if (slices < 3U || stacks < 2U) {
-        throw std::invalid_argument("UV sphere requires at least 3 slices and 2 stacks");
+    // Bound index arithmetic and CPU/GPU allocations before computing slices + 1.
+    if (slices < 3U || stacks < 2U || slices > 2048U || stacks > 2048U) {
+        throw std::invalid_argument("UV sphere requires 3..2048 slices and 2..2048 stacks");
     }
     SphereMesh mesh;
     mesh.vertices.reserve(static_cast<std::size_t>(slices + 1U) * (stacks + 1U));
@@ -42,7 +46,10 @@ std::vector<GridLine> makeEngineeringGrid(float half_extent, float spacing) {
         spacing <= 0.0F) {
         throw std::invalid_argument("grid extent and spacing must be positive finite render units");
     }
-    const int subdivisions = static_cast<int>(std::floor(half_extent / spacing));
+    const double requested_subdivisions = static_cast<double>(half_extent) / spacing;
+    if (requested_subdivisions > 4096.0)
+        throw std::invalid_argument("grid exceeds the 4096-subdivision work budget");
+    const int subdivisions = static_cast<int>(std::floor(requested_subdivisions));
     std::vector<GridLine> lines;
     lines.reserve(static_cast<std::size_t>(2 * (2 * subdivisions + 1)));
     for (int index = -subdivisions; index <= subdivisions; ++index) {

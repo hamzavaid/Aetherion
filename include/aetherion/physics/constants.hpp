@@ -1,3 +1,6 @@
+/** @file
+ * Shared SI physical constants used by force solvers, field samplers, and analytical fixtures.
+ */
 #pragma once
 
 namespace aetherion::physics::constants {

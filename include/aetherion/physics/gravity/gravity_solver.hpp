@@ -1,3 +1,6 @@
+/** @file
+ * Deterministic direct Newtonian gravity with optional Plummer softening and separation guards.
+ */
 #pragma once
 
 #include <cstddef>
@@ -18,6 +21,8 @@ struct GravityDiagnostics {
 };
 
 /// Direct O(N^2) Newtonian gravity reference solver in SI units.
+/// Adds G*m*r/(r²+epsilon²)^(3/2), with epsilon in meters. Skips guarded/coincident pairs,
+/// respects interaction masks/fixed bodies, and restores entry kinematics on numerical failure.
 class GravitySolver final {
   public:
     explicit GravitySolver(GravityConfig config = {});

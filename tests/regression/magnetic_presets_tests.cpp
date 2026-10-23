@@ -1,3 +1,4 @@
+// Magnetic preset dynamics and decoupled field-display data.
 #include "aetherion/presets/em_presets.hpp"
 
 #include <gtest/gtest.h>

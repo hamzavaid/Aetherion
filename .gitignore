@@ -71,3 +71,8 @@ docs/
 .tools/
 .vs/
 imgui.ini
+
+# Local scene state and recoverable save sidecars are not source artifacts.
+/aetherion_scene.json
+/aetherion_scene.json.pending
+/aetherion_scene.json.previous

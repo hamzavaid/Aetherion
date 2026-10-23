@@ -1,3 +1,6 @@
+/** @file
+ * Finite-propagation tolerances and explicit per-source and aggregate history-allocation limits.
+ */
 #pragma once
 
 #include <cstddef>

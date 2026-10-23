@@ -1,3 +1,4 @@
+// Cartesian arithmetic, normalization, cross products, and invalid scalar handling.
 #include "aetherion/math/vec3d.hpp"
 
 #include <gtest/gtest.h>

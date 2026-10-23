@@ -1,3 +1,7 @@
+/** @file
+ * Interactive body defaults derived from the active physics model; positions and radii are in
+ * meters.
+ */
 #include "aetherion/core/body_defaults.hpp"
 
 #include <algorithm>

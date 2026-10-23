@@ -1,3 +1,6 @@
+/** @file
+ * Bounded undo history for explicit world-frame position edits, separate from simulated motion.
+ */
 #pragma once
 
 #include <cstddef>

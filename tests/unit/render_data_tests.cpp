@@ -1,6 +1,18 @@
+// Camera-relative precision, visual radii, selection highlighting, and GPU range checks.
 #include "aetherion/renderer/render_data.hpp"
 
 #include <gtest/gtest.h>
+#include <stdexcept>
+
+TEST(RenderData, RejectsOverflowedGpuCoordinatesAndRadius) {
+    EXPECT_THROW(static_cast<void>(aetherion::renderer::toCameraRelative(
+                     {1.0e308, 0.0, 0.0}, {-1.0e308, 0.0, 0.0}, 1.0)),
+                 std::overflow_error);
+    aetherion::core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "huge", .mass_kg = 1.0, .radius_m = 1.0e100}));
+    EXPECT_THROW(static_cast<void>(aetherion::renderer::buildBodyInstances(scene, {}, {})),
+                 std::overflow_error);
+}
 
 using aetherion::core::Body;
 using aetherion::core::Scene;

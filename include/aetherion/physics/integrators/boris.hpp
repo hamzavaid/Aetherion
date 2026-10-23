@@ -1,7 +1,9 @@
+/** @file
+ * Electric half-kicks and Boris magnetic rotation for nonrelativistic charged-particle motion.
+ */
 #pragma once
 
 #include <functional>
-#include <vector>
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/scene.hpp"
@@ -23,9 +25,6 @@ class BorisIntegrator final {
     [[nodiscard]] core::Status step(core::Scene& scene, double dt_s,
                                     const AccelerationFunction& nonmagnetic_acceleration,
                                     const MagneticFieldFunction& magnetic_field);
-
-  private:
-    std::vector<core::BodyState> initial_;
 };
 
 } // namespace aetherion::physics

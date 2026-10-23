@@ -1,12 +1,18 @@
+/** @file
+ * Deterministically ordered SI body storage with stable, nonzero entity identities.
+ */
 #include "aetherion/core/scene.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 namespace aetherion::core {
 
 Status Scene::validate(const Body& body) {
+    if ((body.interactions.bits & ~std::uint32_t{7}) != 0U)
+        return Error{ErrorCode::invalid_argument, "body interaction mask contains unknown bits"};
     if (body.name.empty()) {
         return Error{ErrorCode::invalid_argument, "body name must not be empty"};
     }
@@ -31,9 +37,12 @@ Result<EntityId> Scene::createBody(Body body) {
     if (!validation) {
         return validation.error();
     }
-    body.id = next_id_++;
+    if (next_id_ == std::numeric_limits<EntityId>::max())
+        return Error{ErrorCode::invalid_argument, "entity ID space is exhausted"};
+    body.id = next_id_;
     const EntityId id = body.id;
     bodies_.push_back(std::move(body));
+    ++next_id_;
     return id;
 }
 
@@ -41,12 +50,13 @@ Result<EntityId> Scene::importBody(Body body) {
     const auto validation = validate(body);
     if (!validation)
         return validation.error();
-    if (body.id == 0U || find(body.id) != nullptr) {
+    if (body.id == 0U || body.id == std::numeric_limits<EntityId>::max() ||
+        find(body.id) != nullptr) {
         return Error{ErrorCode::invalid_argument, "imported body ID must be non-zero and unique"};
     }
     const EntityId id = body.id;
-    next_id_ = std::max(next_id_, id + 1U);
     bodies_.push_back(std::move(body));
+    next_id_ = std::max(next_id_, id + 1U);
     return id;
 }
 

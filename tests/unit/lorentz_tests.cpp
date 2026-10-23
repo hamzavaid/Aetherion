@@ -1,3 +1,4 @@
+// Right-hand-rule Lorentz forces, magnetic perpendicularity, and analytical gyro quantities.
 #include "aetherion/physics/em/lorentz.hpp"
 
 #include <gtest/gtest.h>

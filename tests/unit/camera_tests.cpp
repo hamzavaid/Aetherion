@@ -1,3 +1,4 @@
+// Camera geometry, projection, huge origins, tracking, and orthographic behavior.
 #include "aetherion/renderer/camera.hpp"
 #include "aetherion/renderer/camera_tracking.hpp"
 
@@ -19,6 +20,15 @@ TEST(Camera, OrbitPanZoomFocusAndResetMaintainFiniteGeometry) {
     EXPECT_EQ(camera.targetWorld(), (Vec3d{1.5e11, -2.0e10, 3.0e9}));
     camera.reset();
     EXPECT_EQ(camera.positionWorld(), initial_position);
+}
+
+TEST(Camera, CloseFocusAtHugeOriginDoesNotCollapseTheViewDirection) {
+    Camera camera;
+    camera.focus({1.0e30, 1.0e30, 1.0e30}, 1.0);
+    EXPECT_NO_THROW(camera.pan(1.0, 1.0));
+    const auto ray = camera.rayFromNdc(0.0, 0.0, 1.0);
+    EXPECT_NEAR(ray.direction.norm(), 1.0, 1.0e-14);
+    EXPECT_TRUE(camera.targetWorld().isFinite());
 }
 
 TEST(Camera, CenterViewportRayPointsAtOrbitTarget) {

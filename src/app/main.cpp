@@ -1,3 +1,7 @@
+/** @file
+ * Desktop entry point coordinating fixed-step simulation, scene rendering, UI input ownership, and
+ * picking.
+ */
 #include "aetherion/core/log.hpp"
 
 #ifdef AETHERION_HAS_UI
@@ -47,6 +51,7 @@ int main() {
             aetherion::core::Logger::write(aetherion::core::LogLevel::error,
                                            simulation_status.error().message);
             controller.setPlaying(false);
+            ui.reportRuntimeError(simulation_status.error().message);
         }
         ui.updateCameraTracking(controller.scene(), camera);
         render_settings.simulation_time_s = controller.simulationTimeSeconds();
@@ -57,7 +62,10 @@ int main() {
         if (!render_status) {
             aetherion::core::Logger::write(aetherion::core::LogLevel::error,
                                            render_status.error().message);
-            return 1;
+            if (render_status.error().code == aetherion::core::ErrorCode::platform_failure)
+                return 1;
+            controller.setPlaying(false);
+            ui.reportRuntimeError(render_status.error().message);
         }
         const auto draw_status = ui.draw(controller, camera, render_settings);
         if (!draw_status)

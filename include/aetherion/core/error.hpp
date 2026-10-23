@@ -1,3 +1,6 @@
+/** @file
+ * Value-or-error contracts for recoverable validation, numerical, and platform failures.
+ */
 #pragma once
 
 #include <string>
@@ -21,6 +24,8 @@ template <typename T> class Result {
 
     [[nodiscard]] bool hasValue() const noexcept { return std::holds_alternative<T>(storage_); }
     [[nodiscard]] explicit operator bool() const noexcept { return hasValue(); }
+    /// Access only after testing hasValue(); wrong-alternative access throws
+    /// std::bad_variant_access.
     [[nodiscard]] const T& value() const { return std::get<T>(storage_); }
     [[nodiscard]] T& value() { return std::get<T>(storage_); }
     [[nodiscard]] const Error& error() const { return std::get<Error>(storage_); }

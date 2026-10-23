@@ -1,3 +1,6 @@
+/** @file
+ * Nonrelativistic q(E + v cross B) dynamics and uniform-field gyro diagnostics in SI units.
+ */
 #pragma once
 
 #include <cstddef>

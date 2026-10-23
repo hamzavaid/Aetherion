@@ -1,3 +1,4 @@
+// Validated FIFO edits, interaction masks, runtime changes, and event reporting.
 #include "aetherion/core/command_queue.hpp"
 
 #include <gtest/gtest.h>

@@ -1,3 +1,6 @@
+/** @file
+ * Barycentric two-body and approximate Sun-Earth-Moon Newtonian demonstrations in SI units.
+ */
 #include "aetherion/presets/mechanics_presets.hpp"
 
 #include <cmath>

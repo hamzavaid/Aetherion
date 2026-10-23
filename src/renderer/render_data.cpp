@@ -1,11 +1,35 @@
+/** @file
+ * Validated presentation settings and checked world-double to camera-relative GPU-float conversion.
+ */
 #include "aetherion/renderer/render_data.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <numeric>
 #include <stdexcept>
 
 namespace aetherion::renderer {
+
+core::Status validateRenderSettings(const RenderSettings& settings) {
+    const auto positive = [](double value) { return std::isfinite(value) && value > 0.0; };
+    const auto& motion = settings.motion_glyphs;
+    if (!positive(settings.meters_to_render_units) || !positive(settings.minimum_apparent_radius) ||
+        !positive(settings.body_radius_scale) || !positive(settings.trail_duration_s) ||
+        !std::isfinite(settings.simulation_time_s) || settings.simulation_time_s < 0.0 ||
+        !positive(motion.length_fraction) || motion.length_fraction > 1.0 ||
+        !positive(motion.velocity_reference_mps) || !positive(motion.force_reference_N) ||
+        !positive(motion.acceleration_reference_mps2) || static_cast<int>(motion.scaling) < 0 ||
+        static_cast<int>(motion.scaling) > 2 || static_cast<int>(settings.reference_frame) < 0 ||
+        static_cast<int>(settings.reference_frame) > 2 || settings.probes.size() > 16U)
+        return core::Error{core::ErrorCode::invalid_argument,
+                           "invalid finite render settings or presentation work budget"};
+    for (const auto& probe : settings.probes)
+        if (probe.name.empty() || !probe.position_m.isFinite() ||
+            !positive(probe.vector_length_fraction) || probe.vector_length_fraction > 1.0)
+            return core::Error{core::ErrorCode::invalid_argument, "invalid field probe definition"};
+    return validateFieldVisualizationSettings(settings.field_visualization);
+}
 
 Vec3f toCameraRelative(const math::Vec3d& world_position_m, const math::Vec3d& camera_origin_m,
                        double meters_to_render_units) {
@@ -16,8 +40,8 @@ Vec3f toCameraRelative(const math::Vec3d& world_position_m, const math::Vec3d& c
     }
     const auto relative = (world_position_m - camera_origin_m) * meters_to_render_units;
     constexpr double maximum_float = static_cast<double>(std::numeric_limits<float>::max());
-    if (std::abs(relative.x) > maximum_float || std::abs(relative.y) > maximum_float ||
-        std::abs(relative.z) > maximum_float) {
+    if (!relative.isFinite() || std::abs(relative.x) > maximum_float ||
+        std::abs(relative.y) > maximum_float || std::abs(relative.z) > maximum_float) {
         throw std::overflow_error("camera-relative position exceeds GPU float range");
     }
     return {static_cast<float>(relative.x), static_cast<float>(relative.y),
@@ -35,7 +59,10 @@ double visualBodyRadiusMeters(const core::Body& body, const RenderSettings& sett
     const double scaled_radius_m = body.radius_m * static_cast<double>(settings.body_radius_scale);
     const double minimum_radius_m =
         static_cast<double>(settings.minimum_apparent_radius) / settings.meters_to_render_units;
-    return std::max(scaled_radius_m, minimum_radius_m);
+    const double radius_m = std::max(scaled_radius_m, minimum_radius_m);
+    if (!std::isfinite(radius_m))
+        throw std::overflow_error("visual body radius exceeds finite world-space range");
+    return radius_m;
 }
 
 SceneFocusBounds calculateSceneFocusBounds(const core::Scene& scene,
@@ -53,8 +80,12 @@ SceneFocusBounds calculateSceneFocusBounds(const core::Scene& scene,
         maximum.y = std::max(maximum.y, body.state.position_m.y + radius_m);
         maximum.z = std::max(maximum.z, body.state.position_m.z + radius_m);
     }
-    const auto center = (minimum + maximum) * 0.5;
-    const double radius_m = std::max((maximum - minimum).norm() * 0.5, 1.0e-12);
+    const math::Vec3d center{std::midpoint(minimum.x, maximum.x),
+                             std::midpoint(minimum.y, maximum.y),
+                             std::midpoint(minimum.z, maximum.z)};
+    const double radius_m = std::max((maximum * 0.5 - minimum * 0.5).norm(), 1.0e-12);
+    if (!center.isFinite() || !std::isfinite(radius_m))
+        throw std::overflow_error("scene focus bounds exceed finite world-space range");
     return {.center_world_m = center, .radius_m = radius_m};
 }
 
@@ -73,6 +104,8 @@ std::vector<BodyInstance> buildBodyInstances(const core::Scene& scene,
     for (const auto& body : scene.bodies()) {
         const float radius = static_cast<float>(visualBodyRadiusMeters(body, settings) *
                                                 settings.meters_to_render_units);
+        if (!std::isfinite(radius) || radius <= 0.0F)
+            throw std::overflow_error("body radius is outside the GPU float range");
         const float mass_tint = static_cast<float>(
             std::clamp(std::log10(std::max(body.mass_kg, 1.0)) / 32.0, 0.0, 1.0));
         instances.push_back({toCameraRelative(body.state.position_m, camera_origin_m,

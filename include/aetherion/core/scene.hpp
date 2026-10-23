@@ -1,3 +1,6 @@
+/** @file
+ * Deterministically ordered SI body storage with stable, nonzero entity identities.
+ */
 #pragma once
 
 #include <cstdint>
@@ -55,6 +58,7 @@ struct Body {
 /// Deterministically ordered owner of bodies and monotonically allocated entity IDs.
 class Scene final {
   public:
+    /// Validates SI properties, assigns the next stable ID, and rejects exhausted ID space.
     [[nodiscard]] Result<EntityId> createBody(Body body);
     /// Imports a validated non-zero ID for deterministic scene deserialization.
     [[nodiscard]] Result<EntityId> importBody(Body body);
@@ -62,6 +66,7 @@ class Scene final {
     [[nodiscard]] Status replace(EntityId id, Body body);
     [[nodiscard]] Body* find(EntityId id) noexcept;
     [[nodiscard]] const Body* find(EntityId id) const noexcept;
+    /// Solver-only mutable access: preserve identities, topology, and finite states during a step.
     [[nodiscard]] std::vector<Body>& bodies() noexcept { return bodies_; }
     [[nodiscard]] const std::vector<Body>& bodies() const noexcept { return bodies_; }
     [[nodiscard]] std::size_t size() const noexcept { return bodies_.size(); }

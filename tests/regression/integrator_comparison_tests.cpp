@@ -1,3 +1,4 @@
+// Circular-orbit convergence/stability ordering and degenerate-reference handling.
 #include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
 
@@ -5,6 +6,14 @@
 
 using aetherion::physics::IntegratorComparison;
 using aetherion::physics::IntegratorKind;
+
+TEST(IntegratorComparison, RadialTwoBodyStateDoesNotRequireAnOrbitalAxis) {
+    aetherion::core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "a", .mass_kg = 1.0, .radius_m = 0.1}));
+    ASSERT_TRUE(scene.createBody(
+        {.name = "b", .mass_kg = 1.0, .radius_m = 0.1, .state = {.position_m = {1.0, 0.0, 0.0}}}));
+    EXPECT_NO_THROW(static_cast<void>(IntegratorComparison::run(scene, 0.01, 2)));
+}
 
 TEST(IntegratorComparison, EarthOrbitDemonstratesExpectedErrorAndStabilityOrdering) {
     const auto initial = aetherion::presets::makeEarthLikeOrbit();

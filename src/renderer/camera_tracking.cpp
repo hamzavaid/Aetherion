@@ -1,3 +1,6 @@
+/** @file
+ * Optional body or center-of-mass camera tracking that preserves user orbit and zoom.
+ */
 #include "aetherion/renderer/camera_tracking.hpp"
 
 #include "aetherion/core/scientific_analysis.hpp"

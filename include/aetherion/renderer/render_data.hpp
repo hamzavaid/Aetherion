@@ -1,3 +1,6 @@
+/** @file
+ * Validated presentation settings and checked world-double to camera-relative GPU-float conversion.
+ */
 #pragma once
 
 #include <optional>
@@ -27,6 +30,9 @@ struct RenderSettings {
     core::ReferenceFrame reference_frame{core::ReferenceFrame::world};
     std::optional<core::EntityId> reference_body;
 };
+
+/// Checks presentation controls before UI edits or saved settings can reach GPU operations.
+[[nodiscard]] core::Status validateRenderSettings(const RenderSettings& settings);
 
 struct BodyInstance {
     Vec3f position;

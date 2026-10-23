@@ -1,3 +1,4 @@
+// Simulation-time trail retention, bounded storage, reset, and per-body isolation.
 #include "aetherion/renderer/trail_history.hpp"
 
 #include <gtest/gtest.h>

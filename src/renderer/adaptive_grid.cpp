@@ -1,14 +1,19 @@
+/** @file
+ * Camera-scale engineering-grid spacing chosen from bounded 1/2/5 increments in render units.
+ */
 #include "aetherion/renderer/adaptive_grid.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace aetherion::renderer {
 namespace {
 
 double niceCeiling(double value) {
-    const double magnitude = std::pow(10.0, std::floor(std::log10(value)));
+    const double magnitude = std::max(std::pow(10.0, std::floor(std::log10(value))),
+                                      std::numeric_limits<double>::denorm_min());
     const double normalized = value / magnitude;
     if (normalized <= 1.0)
         return magnitude;
@@ -29,6 +34,9 @@ AdaptiveGridParameters calculateAdaptiveGrid(double camera_distance_m,
             "adaptive grid requires positive finite camera distance and scale");
     }
     const double rendered_distance = camera_distance_m * meters_to_render_units;
+    if (!std::isfinite(rendered_distance) || rendered_distance / 12.0 <= 0.0 ||
+        rendered_distance > std::numeric_limits<float>::max() / 32.0)
+        throw std::overflow_error("adaptive grid scale is outside its representable range");
     const double spacing = niceCeiling(rendered_distance / 12.0);
     const double minimum_extent = rendered_distance * 3.0;
     const std::size_t subdivisions =

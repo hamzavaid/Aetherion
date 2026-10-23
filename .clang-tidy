@@ -5,7 +5,7 @@ Checks: >
   portability-*,
   readability-identifier-naming
 WarningsAsErrors: ''
-HeaderFilterRegex: '^(include|src)/'
+HeaderFilterRegex: '(^|[\\/])(include|src)[\\/]'
 CheckOptions:
   readability-identifier-naming.NamespaceCase: lower_case
   readability-identifier-naming.ClassCase: CamelCase

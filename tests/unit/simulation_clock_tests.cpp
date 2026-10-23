@@ -1,3 +1,4 @@
+// Fixed-step accumulation, catch-up limits, and retained fractional frame duration.
 #include "aetherion/core/simulation_clock.hpp"
 
 #include <gtest/gtest.h>

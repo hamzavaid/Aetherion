@@ -1,3 +1,4 @@
+// Exclusive UI input ownership and world-axis scene-nudge mappings.
 #include "aetherion/renderer/input_routing.hpp"
 
 #include <gtest/gtest.h>

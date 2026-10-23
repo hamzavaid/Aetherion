@@ -1,3 +1,4 @@
+// End-to-end command, playback, checkpoint, and restore workflows.
 #include "aetherion/core/simulation_controller.hpp"
 
 #include <gtest/gtest.h>

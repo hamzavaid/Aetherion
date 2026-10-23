@@ -1,3 +1,6 @@
+/** @file
+ * Validated FIFO scene edits. Physics mutations are applied only at explicit simulation boundaries.
+ */
 #pragma once
 
 #include <cstdint>
@@ -79,7 +82,8 @@ struct CommandApplyReport {
     bool invalidate_source_history{};
 };
 
-/// Thread-safe FIFO. Draining is restricted to explicit simulation-step boundaries.
+/// Thread-safe producer FIFO. Draining/event-log inspection belongs to the simulation/UI thread
+/// at explicit step boundaries; each command is individually validated and rejected atomically.
 class CommandQueue final {
   public:
     void enqueue(SimulationCommand command);

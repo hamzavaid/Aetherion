@@ -1,3 +1,7 @@
+/** @file
+ * Double-precision orbit/orthographic camera with world-meter targets and angle-derived viewing
+ * directions.
+ */
 #pragma once
 
 #include "aetherion/math/vec3d.hpp"
@@ -21,6 +25,8 @@ class Camera final {
     void reset() noexcept;
 
     [[nodiscard]] math::Vec3d positionWorld() const noexcept;
+    /// World-frame unit viewing direction derived from angles, independent of origin rounding.
+    [[nodiscard]] math::Vec3d forwardDirection() const noexcept;
     [[nodiscard]] const math::Vec3d& targetWorld() const noexcept { return target_world_m_; }
     [[nodiscard]] double distanceMeters() const noexcept { return distance_m_; }
     [[nodiscard]] bool isTwoDimensional() const noexcept { return two_dimensional_; }

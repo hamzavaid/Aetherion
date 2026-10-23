@@ -1,3 +1,6 @@
+/** @file
+ * Velocity-first symplectic Euler stepping of dynamic bodies in inertial SI coordinates.
+ */
 #pragma once
 
 #include "aetherion/core/error.hpp"

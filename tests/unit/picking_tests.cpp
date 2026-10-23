@@ -1,6 +1,15 @@
+// Nearest visible body/probe selection and distant off-axis ray rejection.
 #include "aetherion/renderer/picking.hpp"
-
 #include <gtest/gtest.h>
+
+TEST(PickingQuality, DistantOffAxisBodyIsNotAFalsePositive) {
+    aetherion::core::Scene scene;
+    ASSERT_TRUE(scene.createBody({.name = "distant",
+                                  .mass_kg = 1.0,
+                                  .radius_m = 1.0,
+                                  .state = {.position_m = {1000.0, 0.0, -1.0e11}}}));
+    EXPECT_FALSE(aetherion::renderer::pickBody(scene, {{}, {0.0, 0.0, -1.0}}));
+}
 
 using aetherion::core::Body;
 using aetherion::core::Scene;

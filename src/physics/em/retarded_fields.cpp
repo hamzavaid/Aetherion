@@ -1,3 +1,7 @@
+/** @file
+ * Bounded source trajectories and finite-delay Coulomb sampling without extrapolation or radiation
+ * terms.
+ */
 #include "aetherion/physics/em/retarded_fields.hpp"
 
 #include <algorithm>
@@ -265,6 +269,16 @@ core::Status SourceHistories::record(const core::Scene& scene, double time_s) {
         return core::Error{core::ErrorCode::invalid_argument,
                            "charged-source history allocation budget exceeded"};
     for (const auto& body : scene.bodies()) {
+        // Validate every source before modifying any history, including changed-charge resets.
+        if (isSource(body)) {
+            const auto* existing = find(body.id);
+            if (!std::isfinite(body.charge_C) ||
+                (existing != nullptr && existing->charge_C == body.charge_C &&
+                 existing->history.size() > 0U && time_s < existing->history.newest().time_s))
+                return core::Error{
+                    core::ErrorCode::invalid_argument,
+                    "source charge must be finite and history time cannot run backwards"};
+        }
         if (isSource(body) &&
             (!body.state.position_m.isFinite() || !body.state.velocity_mps.isFinite() ||
              !body.state.acceleration_mps2.isFinite()))

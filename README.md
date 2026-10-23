@@ -29,13 +29,25 @@ ctest --test-dir build/windows-gcc --output-on-failure
 
 Use `-DAETHERION_BUILD_RENDERER=OFF` when configuring a headless build.
 
+Run `aetherion_app` from the build directory to open the desktop simulator. On Windows,
+use `build\windows-gcc\aetherion_app.exe` for the separate GCC build above, or
+`build\dev\aetherion_app.exe` for the development preset. Keep the compiler's runtime DLLs
+on `PATH` (for UCRT64, `C:\msys64\ucrt64\bin`). Do not reuse a CMake build directory between
+Windows, WSL, GCC, and MSVC.
+
+For contributor checks, install clang-format 23.1.1 before configuring, then run
+`cmake --build build/dev --target format-check`. Compiler warnings are errors by default;
+optional clang-tidy checking is enabled with `-DAETHERION_ENABLE_CLANG_TIDY=ON` when installed.
+Renderer-enabled CTest runs include hidden-window OpenGL and UI smoke checks and require a
+working graphics context; headless builds run all graphics-independent tests.
+
 The desktop camera starts above the engineering grid looking down. Left-click selects a rendered
 body, left-drag orbits, middle/right-drag pans, the mouse wheel zooms, and `R` resets the camera.
 Camera controls are suspended whenever a UI window or widget owns the corresponding input. The
 camera-centered grid expands with zoom, changes spacing in 1/2/5 engineering increments, and can be
 hidden from Simulation Controls.
 
-Simulation coordinates remain SI-valued doubles. Meters per render unit, minimum apparent radius,
+Simulation coordinates remain SI-valued doubles. Render units per meter, minimum apparent radius,
 and the logarithmic body-radius multiplier are visualization-only controls and never modify physical
 radius, collision geometry, gravity, or integration. Direct scene picking follows the displayed
 radius, making visually enlarged astronomical bodies selectable.
@@ -84,11 +96,22 @@ RK4-traced electric field lines are available from Simulation Controls. Field sa
 operate through a physics-provider interface; visualization never reimplements the Coulomb law.
 Scene JSON saves preserve SI body state, electromagnetic settings, visualization regions, vector
 scaling, trace limits, and custom field-line seeds.
+Invalid settings are rejected before saving or rendering. Saving stages the new file before
+replacing an existing save; `.pending` or `.previous` sidecars left after an interrupted save are
+preserved for recovery. Back up any such sidecars before retrying. JSON entity IDs retain their
+full integer precision; loading is bounded to 16 MiB and 64 nesting levels.
 
-Semi-Implicit Euler, Velocity Verlet, and classical RK4 are selectable at runtime. The diagnostics
-and plots report mechanical energy and momentum errors relative to the initial sample, while the
+Semi-Implicit Euler, Velocity Verlet, classical RK4, and Boris are selectable at runtime. Boris
+is preferred for nonrelativistic magnetic gyro motion. Energy totals include kinetic energy and
+the enabled gravity, softened Coulomb, and static uniform-electric-field potentials. Magnetic
+forces do no work. Fixed sources and runtime edits can exchange energy/momentum with the scene;
+these diagnostics are not a closed-system conservation claim in those cases. The diagnostics
+and plots report errors relative to the baseline, while the
 timestep analyzer warns when orbital or pair-crossing timescales are under-resolved. Run
 `aetherion_compare` for the reproducible one-period Earth-like integrator comparison.
+Changing the entity set or conservative force configuration starts a new diagnostic baseline.
+For an exactly zero baseline invariant, the error indicator is 0 when unchanged and 1 otherwise.
+Rejected numerical steps restore body state and do not advance simulation time.
 
 **Propagation-delay probes** in Simulation Controls loads a moving charge and probes at 3 m and
 6 m. Press Play and inspect Field Probes or plot **Probe EM availability**, **Probe flight delay**,

@@ -1,3 +1,6 @@
+/** @file
+ * Command-line circular-orbit integrator comparison with reproducible initial state and timestep.
+ */
 #include "aetherion/physics/integrator_comparison.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
 

@@ -1,3 +1,5 @@
+// Hidden-window OpenGL integration checks for bodies, field displays, probes, and astronomical
+// scales.
 #include "aetherion/core/scene.hpp"
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/physics/em/electrostatics.hpp"
@@ -16,6 +18,12 @@ int main() {
     }
     aetherion::renderer::Camera camera;
     aetherion::core::Scene local_scene;
+    if (renderer.initialize(640, 360, "duplicate initialization", false))
+        return 17;
+    aetherion::renderer::RenderSettings invalid_settings;
+    invalid_settings.meters_to_render_units = -1.0;
+    if (renderer.render(local_scene, camera, invalid_settings))
+        return 18;
     const auto local_id = local_scene.createBody({.name = "local",
                                                   .mass_kg = 1.0,
                                                   .radius_m = 1.0,

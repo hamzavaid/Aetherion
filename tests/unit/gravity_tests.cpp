@@ -1,3 +1,5 @@
+// Analytical Newtonian acceleration, symmetry, singularity guards, and arbitrary-position gravity
+// sampling.
 #include "aetherion/physics/gravity/gravity_solver.hpp"
 
 #include <gtest/gtest.h>

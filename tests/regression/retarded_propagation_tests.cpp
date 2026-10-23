@@ -1,3 +1,5 @@
+// Finite probe-signal arrival, deterministic replay, accepted-state recording, and edit/reset
+// boundaries.
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/presets/em_presets.hpp"
 

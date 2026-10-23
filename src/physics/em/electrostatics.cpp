@@ -1,3 +1,7 @@
+/** @file
+ * Direct Coulomb interactions and read-only superposition of gravity, electric, and analytic
+ * magnetic fields.
+ */
 #include "aetherion/physics/em/electrostatics.hpp"
 
 #include <bit>
@@ -5,6 +9,7 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "aetherion/core/state_transaction.hpp"
 #include "aetherion/physics/constants.hpp"
 
 namespace aetherion::physics::em {
@@ -40,7 +45,8 @@ core::Status validateElectromagneticSettings(const ElectromagneticSettings& sett
                            "electromagnetic distance guards must be finite and non-negative in m"};
     }
     for (const auto& source : settings.analytic_sources) {
-        if (!finiteSource(source)) {
+        if (!finiteSource(source) || (source.kind != AnalyticFieldSourceKind::uniform &&
+                                      source.kind != AnalyticFieldSourceKind::magnetic_dipole)) {
             return core::Error{core::ErrorCode::invalid_argument,
                                "analytic field source values must be finite SI quantities"};
         }
@@ -61,16 +67,18 @@ core::Result<math::Vec3d> samplePointChargeField(double charge_C, const math::Ve
     if (charge_C == 0.0)
         return math::Vec3d{};
     const auto displacement = observer_m - source_m;
-    const double r2 = displacement.squaredNorm();
-    if (r2 <= settings.minimum_separation_m * settings.minimum_separation_m)
+    const double distance_m = displacement.norm();
+    if (distance_m <= settings.minimum_separation_m)
         return core::Error{core::ErrorCode::numerical_failure,
                            "point-charge sample inside source guard"};
-    const double softened = r2 + settings.softening_m * settings.softening_m;
-    const double denominator = softened * std::sqrt(softened);
-    if (!std::isfinite(denominator) || denominator <= 0.0)
+    const double softened_distance_m = std::hypot(distance_m, settings.softening_m);
+    if (!std::isfinite(softened_distance_m) || softened_distance_m <= 0.0)
         return core::Error{core::ErrorCode::numerical_failure,
                            "point-charge distance outside finite range"};
-    const auto field = constants::coulomb_constant * charge_C * displacement / denominator;
+    // E=k(q/r_soft)(1/r_soft)(r/r_soft), avoiding unrepresentable r³ and k*q intermediates.
+    const double magnitude_factor =
+        (charge_C / softened_distance_m) * (constants::coulomb_constant / softened_distance_m);
+    const auto field = (displacement / softened_distance_m) * magnitude_factor;
     if (!field.isFinite())
         return core::Error{core::ErrorCode::numerical_failure, "point-charge sample overflow"};
     return field;
@@ -91,16 +99,16 @@ void ElectrostaticSolver::setSettings(const ElectromagneticSettings& settings) {
 }
 
 core::Status ElectrostaticSolver::accumulateAccelerations(core::Scene& scene) {
+    core::StateTransaction transaction(scene);
     diagnostics_ = {};
     auto& bodies = scene.bodies();
     for (const auto& body : bodies) {
-        if (!body.fixed && body.charge_C != 0.0 && body.mass_kg <= 0.0) {
+        if (body.interactions.contains(core::Interaction::electrostatic) && !body.fixed &&
+            body.charge_C != 0.0 && body.mass_kg <= 0.0) {
             return core::Error{core::ErrorCode::invalid_argument,
                                "dynamic charged bodies require positive mass in kg"};
         }
     }
-    const double minimum_squared = settings_.minimum_separation_m * settings_.minimum_separation_m;
-    const double softening_squared = settings_.softening_m * settings_.softening_m;
     for (std::size_t first = 0; first < bodies.size(); ++first) {
         for (std::size_t second = first + 1U; second < bodies.size(); ++second) {
             auto& lhs = bodies[first];
@@ -111,16 +119,17 @@ core::Status ElectrostaticSolver::accumulateAccelerations(core::Scene& scene) {
                 continue;
             }
             const auto displacement_m = rhs.state.position_m - lhs.state.position_m;
-            const double physical_distance_squared = displacement_m.squaredNorm();
-            if (physical_distance_squared <= minimum_squared) {
+            if (displacement_m.norm() <= settings_.minimum_separation_m) {
                 ++diagnostics_.guarded_pairs;
                 continue;
             }
-            const double distance_squared = physical_distance_squared + softening_squared;
-            const double inverse_distance_cubed =
-                1.0 / (distance_squared * std::sqrt(distance_squared));
-            const auto force_on_lhs_N = -constants::coulomb_constant * lhs.charge_C * rhs.charge_C *
-                                        displacement_m * inverse_distance_cubed;
+            const auto field_on_lhs = samplePointChargeField(rhs.charge_C, rhs.state.position_m,
+                                                             lhs.state.position_m, settings_);
+            if (!field_on_lhs)
+                return field_on_lhs.error();
+            const auto force_on_lhs_N = lhs.charge_C * field_on_lhs.value();
+            if (!force_on_lhs_N.isFinite())
+                return core::Error{core::ErrorCode::numerical_failure, "Coulomb force overflowed"};
             if (!lhs.fixed)
                 lhs.state.acceleration_mps2 += force_on_lhs_N / lhs.mass_kg;
             if (!rhs.fixed)
@@ -134,6 +143,7 @@ core::Status ElectrostaticSolver::accumulateAccelerations(core::Scene& scene) {
                                "Coulomb interaction generated non-finite acceleration"};
         }
     }
+    transaction.commit();
     return core::success();
 }
 
@@ -153,17 +163,16 @@ fields::FieldSample sampleAnalyticField(const ElectromagneticSettings& settings,
             continue;
         }
         const auto displacement_m = position_m - source.position_m;
-        const double distance_squared = displacement_m.squaredNorm();
-        if (distance_squared <= source.singularity_radius_m * source.singularity_radius_m)
+        const double distance = displacement_m.norm();
+        if (!std::isfinite(distance) || distance <= source.singularity_radius_m)
             return {.valid = false};
-        const double distance = std::sqrt(distance_squared);
         const auto direction = displacement_m / distance;
-        const double coefficient = constants::vacuum_permeability /
-                                   (4.0 * 3.14159265358979323846 * distance_squared * distance);
-        result.magnetic_T +=
-            coefficient *
-            (3.0 * math::dot(source.magnetic_dipole_moment_Am2, direction) * direction -
-             source.magnetic_dipole_moment_Am2);
+        // Scale the moment before repeated division so neither r³ nor its raw contraction
+        // must fit as an intermediate value.
+        const double coefficient = constants::vacuum_permeability / (4.0 * 3.14159265358979323846);
+        const auto scaled_moment =
+            ((source.magnetic_dipole_moment_Am2 * coefficient / distance) / distance) / distance;
+        result.magnetic_T += 3.0 * math::dot(scaled_moment, direction) * direction - scaled_moment;
     }
     if (!result.electric_Vpm.isFinite() || !result.magnetic_T.isFinite())
         return {.valid = false};
@@ -194,15 +203,14 @@ fields::FieldSample ElectromagneticFieldProvider::sample(const math::Vec3d& posi
         if (source.mass_kg == 0.0 || !source.interactions.contains(core::Interaction::gravity))
             continue;
         const auto toward_source_m = source.state.position_m - position_m;
-        const double distance_squared = toward_source_m.squaredNorm();
-        if (distance_squared <= source.radius_m * source.radius_m) {
+        const double distance_m = toward_source_m.norm();
+        if (!std::isfinite(distance_m) || distance_m <= source.radius_m) {
             result.gravity_valid = false;
             break;
         }
-        const double inverse_distance_cubed =
-            1.0 / (distance_squared * std::sqrt(distance_squared));
-        result.gravity_mps2 += constants::gravitational_constant * source.mass_kg *
-                               toward_source_m * inverse_distance_cubed;
+        const double magnitude =
+            (constants::gravitational_constant * source.mass_kg / distance_m) / distance_m;
+        result.gravity_mps2 += (toward_source_m / distance_m) * magnitude;
     }
     if (!result.electric_Vpm.isFinite() || !result.magnetic_T.isFinite())
         result.valid = false;

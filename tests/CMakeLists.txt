@@ -1,5 +1,6 @@
 add_executable(aetherion_tests
   unit/error_tests.cpp
+  unit/quality_regression_tests.cpp
   unit/electrostatics_tests.cpp
   unit/retarded_tests.cpp
   unit/field_visualization_tests.cpp

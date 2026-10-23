@@ -1,3 +1,4 @@
+// Magnetic speed conservation, electric kicks, fixed bodies, and neutral particle behavior.
 #include "aetherion/physics/integrators/boris.hpp"
 
 #include <gtest/gtest.h>

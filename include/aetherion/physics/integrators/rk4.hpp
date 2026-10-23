@@ -1,3 +1,7 @@
+/** @file
+ * Classical four-stage Runge-Kutta particle integration with restoration after rejected force
+ * evaluations.
+ */
 #pragma once
 
 #include <vector>

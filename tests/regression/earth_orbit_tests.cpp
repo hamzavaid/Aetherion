@@ -1,3 +1,4 @@
+// Deterministic Earth-like orbital evolution within documented error bounds.
 #include "aetherion/core/simulation.hpp"
 #include "aetherion/presets/mechanics_presets.hpp"
 

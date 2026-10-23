@@ -1,3 +1,7 @@
+/** @file
+ * Read-only arbitrary-position SI field contract with explicit validity and cache revision
+ * information.
+ */
 #pragma once
 
 #include <cstddef>

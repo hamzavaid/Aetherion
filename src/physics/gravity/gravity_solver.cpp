@@ -1,8 +1,12 @@
+/** @file
+ * Deterministic direct Newtonian gravity with optional Plummer softening and separation guards.
+ */
 #include "aetherion/physics/gravity/gravity_solver.hpp"
 
 #include <cmath>
 #include <stdexcept>
 
+#include "aetherion/core/state_transaction.hpp"
 #include "aetherion/physics/constants.hpp"
 
 namespace aetherion::physics {
@@ -15,19 +19,22 @@ GravitySolver::GravitySolver(GravityConfig config) : config_(config) {
 }
 
 core::Status GravitySolver::computeAccelerations(core::Scene& scene) {
+    core::StateTransaction transaction(scene);
     auto& bodies = scene.bodies();
     for (auto& body : bodies) {
         body.state.acceleration_mps2 = {};
     }
-    return accumulateAccelerations(scene);
+    const auto status = accumulateAccelerations(scene);
+    if (status)
+        transaction.commit();
+    return status;
 }
 
 core::Status GravitySolver::accumulateAccelerations(core::Scene& scene) {
+    core::StateTransaction transaction(scene);
     diagnostics_ = {};
     auto& bodies = scene.bodies();
 
-    const double softening_squared = config_.softening_m * config_.softening_m;
-    const double minimum_squared = config_.minimum_separation_m * config_.minimum_separation_m;
     for (std::size_t first = 0; first < bodies.size(); ++first) {
         for (std::size_t second = first + 1U; second < bodies.size(); ++second) {
             auto& lhs = bodies[first];
@@ -37,21 +44,29 @@ core::Status GravitySolver::accumulateAccelerations(core::Scene& scene) {
                 continue;
             }
             const auto displacement_m = rhs.state.position_m - lhs.state.position_m;
-            const double physical_distance_squared = displacement_m.squaredNorm();
-            if (physical_distance_squared <= minimum_squared) {
+            const double physical_distance_m = displacement_m.norm();
+            if (physical_distance_m <= config_.minimum_separation_m) {
                 ++diagnostics_.coincident_pairs;
                 continue;
             }
-            const double softened_distance_squared = physical_distance_squared + softening_squared;
-            const double inverse_distance_cubed =
-                1.0 / (softened_distance_squared * std::sqrt(softened_distance_squared));
-            const auto acceleration_factor =
-                constants::gravitational_constant * displacement_m * inverse_distance_cubed;
+            const double softened_distance_m = std::hypot(physical_distance_m, config_.softening_m);
+            if (!std::isfinite(softened_distance_m) || softened_distance_m <= 0.0)
+                return core::Error{core::ErrorCode::numerical_failure,
+                                   "gravity distance exceeds numerical range"};
+            // Factor r/r_soft and G*m/r_soft² separately; r³ need not be representable even
+            // when the final acceleration is finite. This retains Plummer softening exactly.
+            const auto softened_direction = displacement_m / softened_distance_m;
             if (!lhs.fixed) {
-                lhs.state.acceleration_mps2 += rhs.mass_kg * acceleration_factor;
+                lhs.state.acceleration_mps2 +=
+                    softened_direction *
+                    ((constants::gravitational_constant * rhs.mass_kg / softened_distance_m) /
+                     softened_distance_m);
             }
             if (!rhs.fixed) {
-                rhs.state.acceleration_mps2 -= lhs.mass_kg * acceleration_factor;
+                rhs.state.acceleration_mps2 -=
+                    softened_direction *
+                    ((constants::gravitational_constant * lhs.mass_kg / softened_distance_m) /
+                     softened_distance_m);
             }
             ++diagnostics_.evaluated_pairs;
         }
@@ -63,6 +78,7 @@ core::Status GravitySolver::accumulateAccelerations(core::Scene& scene) {
                                "gravity generated a non-finite acceleration"};
         }
     }
+    transaction.commit();
     return core::success();
 }
 

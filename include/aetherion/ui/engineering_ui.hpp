@@ -1,7 +1,12 @@
+/** @file
+ * Dockable engineering controls; physical edits use commands and presentation edits are validated
+ * locally.
+ */
 #pragma once
 
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/position_edit_history.hpp"
@@ -58,22 +63,35 @@ class EngineeringUi final {
         static_cast<void>(camera_tracker_.update(scene, camera));
     }
     [[nodiscard]] renderer::InputCapture inputCapture() const noexcept { return input_capture_; }
+    /// Displays recoverable simulation/render failures while keeping controls available to repair
+    /// them.
+    void reportRuntimeError(std::string message) { runtime_error_ = std::move(message); }
 
   private:
+    /// Builds the initial dock arrangement once; later frames preserve the user's layout.
     void drawDockSpace();
+    /// Selects stable body IDs or probe indices without mutating physical body properties.
     void drawHierarchy(core::SimulationController& controller,
                        const renderer::RenderSettings& settings, renderer::Camera& camera);
+    /// Emits validated body patches and applies display-only camera focus/follow controls.
     void drawInspector(core::SimulationController& controller, renderer::Camera& camera,
                        const renderer::RenderSettings& render_settings);
+    /// Queues solver edits; validates presentation edits before committing them for the next frame.
     void drawSimulationControls(core::SimulationController& controller, renderer::Camera& camera,
                                 renderer::RenderSettings& render_settings);
+    /// Restores retained physical checkpoints; transient plot/movement histories are cleared.
     void drawSaveHistory(core::SimulationController& controller);
+    /// Displays accepted-state invariants, field failures, gyro resolution, and command rejection.
     void drawDiagnostics(const core::SimulationController& controller);
+    /// Converts finite SI observations to float plots only; no integration or field calculation.
     void drawPlots(const core::SimulationController& controller);
+    /// Edits fixed world-space probe definitions and samples the shared field provider read-only.
     void drawProbes(core::SimulationController& controller, renderer::RenderSettings& settings,
                     renderer::Camera& camera);
+    /// Bounded per-selection nudge/undo controls; physical movement is routed through commands.
     void drawMovementControls(core::SimulationController& controller,
                               renderer::RenderSettings& settings, renderer::Camera& camera);
+    /// Releases ImGui backends/context while the renderer's GLFW/OpenGL context still exists.
     void shutdown() noexcept;
 
     std::optional<core::EntityId> selected_;
@@ -90,6 +108,7 @@ class EngineeringUi final {
     std::optional<physics::IntegratorComparisonReport> comparison_;
     renderer::InputCapture input_capture_;
     std::string scene_file_status_;
+    std::string runtime_error_;
 };
 
 } // namespace aetherion::ui

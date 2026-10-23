@@ -1,3 +1,4 @@
+// Constant-acceleration analytical solutions for Verlet and classical RK4.
 #include "aetherion/physics/integrators/rk4.hpp"
 #include "aetherion/physics/integrators/velocity_verlet.hpp"
 

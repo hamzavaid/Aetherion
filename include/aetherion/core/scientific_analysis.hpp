@@ -1,3 +1,6 @@
+/** @file
+ * Read-only body/probe observations and bounded plot histories in translating world-aligned frames.
+ */
 #pragma once
 
 #include <cstddef>

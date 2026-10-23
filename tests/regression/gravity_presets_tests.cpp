@@ -1,3 +1,4 @@
+// Earth-Sun, Earth-Moon, and Sun-Earth-Moon preset validity and regression behavior.
 #include "aetherion/presets/mechanics_presets.hpp"
 
 #include <gtest/gtest.h>

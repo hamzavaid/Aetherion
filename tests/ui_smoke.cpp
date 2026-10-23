@@ -1,3 +1,5 @@
+// Hidden-window engineering-workspace integration checks for commands, probes, selection, and
+// manual movement.
 #include "aetherion/core/simulation_controller.hpp"
 #include "aetherion/presets/em_presets.hpp"
 #include "aetherion/renderer/opengl_backend.hpp"

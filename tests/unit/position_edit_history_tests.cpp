@@ -1,3 +1,4 @@
+// Per-selection bounded movement, repeat, undo, reset, and target isolation.
 #include "aetherion/core/position_edit_history.hpp"
 
 #include <gtest/gtest.h>

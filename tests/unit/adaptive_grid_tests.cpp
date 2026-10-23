@@ -1,6 +1,15 @@
+// Engineering spacing, zoom coverage, work bounds, and extreme render scales.
 #include "aetherion/renderer/adaptive_grid.hpp"
 
 #include <gtest/gtest.h>
+#include <stdexcept>
+
+TEST(AdaptiveGrid, RejectsProductOverflowAndUnderflowBeforeIntegerConversion) {
+    EXPECT_THROW(static_cast<void>(aetherion::renderer::calculateAdaptiveGrid(1.0e300, 1.0e300)),
+                 std::overflow_error);
+    EXPECT_THROW(static_cast<void>(aetherion::renderer::calculateAdaptiveGrid(1.0e-300, 1.0e-300)),
+                 std::overflow_error);
+}
 
 TEST(AdaptiveGrid, ExpandsAndUsesCoarserSpacingAsCameraZoomsOut) {
     const auto near_grid = aetherion::renderer::calculateAdaptiveGrid(10.0, 1.0);

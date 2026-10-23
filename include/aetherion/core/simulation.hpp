@@ -1,4 +1,10 @@
+/** @file
+ * Headless composition of instantaneous forces, particle integrators, accepted-state history, and
+ * diagnostics.
+ */
 #pragma once
+
+#include <stdexcept>
 
 #include "aetherion/core/error.hpp"
 #include "aetherion/core/scene.hpp"
@@ -23,6 +29,8 @@ struct SimulationConfig {
 class Simulation final {
   public:
     Simulation(Scene& scene, SimulationConfig config = {});
+    /// Advances one fixed SI timestep. Numerical failure restores entry body kinematics and time;
+    /// only accepted final states are added to source history and invariant telemetry.
     [[nodiscard]] Status step();
     void setPhysicsDt(double physics_dt_s);
     void setGravityEnabled(bool enabled) noexcept { gravity_enabled_ = enabled; }
@@ -30,7 +38,9 @@ class Simulation final {
     /// Atomically validates timestep and source-history configuration before changing either.
     void configureFields(const physics::em::ElectromagneticSettings& settings, double dt_s);
     void invalidateSourceHistory();
-    void setIntegrator(physics::IntegratorKind integrator) noexcept {
+    void setIntegrator(physics::IntegratorKind integrator) {
+        if (!physics::isValidIntegrator(integrator))
+            throw std::invalid_argument("unknown particle integrator");
         config_.integrator = integrator;
     }
     /// Clears diagnostics and establishes a new baseline at the supplied simulation time in
@@ -52,6 +62,8 @@ class Simulation final {
     }
 
   private:
+    /// Samples conservative diagnostics with the same enabled forces as the motion solver.
+    void recordTelemetry();
     Scene& scene_;
     SimulationConfig config_;
     physics::GravitySolver gravity_;
