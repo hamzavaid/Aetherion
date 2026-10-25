@@ -6,6 +6,11 @@ option(AETHERION_BUILD_TESTS "Build automated tests" ON)
 option(AETHERION_BUILD_RENDERER "Build the GLFW/OpenGL renderer" ON)
 option(AETHERION_ENABLE_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" ON)
 option(AETHERION_ENABLE_CLANG_TIDY "Run clang-tidy while compiling" OFF)
+option(AETHERION_BUILD_MEDIA_TOOLS "Build reproducible README framebuffer capture tool" OFF)
+
+if(AETHERION_BUILD_MEDIA_TOOLS AND NOT AETHERION_BUILD_RENDERER)
+  message(FATAL_ERROR "README capture requires AETHERION_BUILD_RENDERER=ON")
+endif()
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(CompilerWarnings)
@@ -21,7 +26,8 @@ if(CLANG_FORMAT_EXE)
   file(GLOB_RECURSE AETHERION_FORMAT_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp")
+    "${CMAKE_CURRENT_SOURCE_DIR}/tests/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/*.cpp")
   add_custom_target(format-check
     COMMAND "${CLANG_FORMAT_EXE}" --dry-run --Werror ${AETHERION_FORMAT_SOURCES}
     COMMENT "Checking first-party C++ formatting"
@@ -143,6 +149,12 @@ if(AETHERION_BUILD_RENDERER)
   add_executable(aetherion_ui_smoke tests/ui_smoke.cpp)
   target_link_libraries(aetherion_ui_smoke PRIVATE Aetherion::ui)
   aetherion_set_project_warnings(aetherion_ui_smoke)
+
+  if(AETHERION_BUILD_MEDIA_TOOLS)
+    add_executable(aetherion_capture tools/capture_readme.cpp)
+    target_link_libraries(aetherion_capture PRIVATE Aetherion::ui aetherion_imgui glfw OpenGL::GL)
+    aetherion_set_project_warnings(aetherion_capture)
+  endif()
 endif()
 
 add_executable(aetherion_app src/app/main.cpp)

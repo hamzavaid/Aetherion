@@ -76,3 +76,7 @@ imgui.ini
 /aetherion_scene.json
 /aetherion_scene.json.pending
 /aetherion_scene.json.previous
+
+# Optional media-packaging tooling.
+__pycache__/
+*.pyc

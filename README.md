@@ -1,128 +1,112 @@
 # Aetherion
 
-Aetherion is an interactive, deterministic 3D mechanics simulator built around a testable
-double-precision physics core. The current release supports Newtonian gravity, multiple numerical
-integrators, Coulomb electrostatics, electric-field sampling and tracing, engineering diagnostics,
-retarded source histories and propagation-delay probes, versioned JSON scenes, and an optional
-OpenGL desktop interface.
+Explore orbits, electric fields, and charged-particle motion in an interactive C++ physics simulator.
 
-## Build
+![Aetherion workspace showing a three-dimensional electric dipole and its property inspector](media/readme/workspace.png)
 
-Requirements: CMake 3.25+, C and C++20 compilers, Git, Python 3 with Jinja2 (for the pinned
-OpenGL loader generator), and an internet connection for pinned dependencies.
+[Quick start](#quick-start) · [Try the demos](#try-the-demos) · [Controls](#controls) · [User guide](GUIDE.md) · [Math & techniques](TECHNICAL_GUIDE.md)
+
+## Quick start
+
+You need **CMake 3.25+, Ninja, C/C++20 compilers, Git, Python 3 + Jinja2**, and an
+OpenGL 4.1-capable graphics driver. The first configure downloads pinned dependencies.
 
 ```sh
+python -m pip install Jinja2
 cmake --preset dev
 cmake --build --preset dev
 ctest --preset dev
 ```
 
-On Windows with MSYS2/UCRT64 GCC, keep it separate from MSVC and WSL build directories:
+Launch `build/dev/aetherion_app` on Linux, or `build\dev\aetherion_app.exe` on Windows.
+
+<details>
+<summary>Windows: explicit MSYS2/UCRT64 build commands</summary>
+
+In PowerShell, from the repository root:
 
 ```powershell
+$env:Path = "C:\msys64\ucrt64\bin;" + $env:Path
 cmake -S . -B build/windows-gcc -G Ninja `
   -DCMAKE_C_COMPILER=C:/msys64/ucrt64/bin/gcc.exe `
   -DCMAKE_CXX_COMPILER=C:/msys64/ucrt64/bin/g++.exe
 cmake --build build/windows-gcc --parallel
 ctest --test-dir build/windows-gcc --output-on-failure
+.\build\windows-gcc\aetherion_app.exe
 ```
 
-Use `-DAETHERION_BUILD_RENDERER=OFF` when configuring a headless build.
+Keep CMake and Ninja on `PATH` too. Never share a build directory between GCC, MSVC,
+Windows, and WSL. See [build troubleshooting](GUIDE.md#build-troubleshooting).
 
-Run `aetherion_app` from the build directory to open the desktop simulator. On Windows,
-use `build\windows-gcc\aetherion_app.exe` for the separate GCC build above, or
-`build\dev\aetherion_app.exe` for the development preset. Keep the compiler's runtime DLLs
-on `PATH` (for UCRT64, `C:\msys64\ucrt64\bin`). Do not reuse a CMake build directory between
-Windows, WSL, GCC, and MSVC.
+</details>
 
-For contributor checks, install clang-format 23.1.1 before configuring, then run
-`cmake --build build/dev --target format-check`. Compiler warnings are errors by default;
-optional clang-tidy checking is enabled with `-DAETHERION_ENABLE_CLANG_TIDY=ON` when installed.
-Renderer-enabled CTest runs include hidden-window OpenGL and UI smoke checks and require a
-working graphics context; headless builds run all graphics-independent tests.
+## Try the demos
 
-The desktop camera starts above the engineering grid looking down. Left-click selects a rendered
-body, left-drag orbits, middle/right-drag pans, the mouse wheel zooms, and `R` resets the camera.
-Camera controls are suspended whenever a UI window or widget owns the corresponding input. The
-camera-centered grid expands with zoom, changes spacing in 1/2/5 engineering increments, and can be
-hidden from Simulation Controls.
+These are **real renderer/UI captures**, not mockups. Animations use accelerated fixed-step
+playback; body sizes and field density are adjusted for readability.
+[Capture settings and regeneration](media/readme/README.md).
 
-Simulation coordinates remain SI-valued doubles. Render units per meter, minimum apparent radius,
-and the logarithmic body-radius multiplier are visualization-only controls and never modify physical
-radius, collision geometry, gravity, or integration. Direct scene picking follows the displayed
-radius, making visually enlarged astronomical bodies selectable.
+### 1. Watch the Moon orbit Earth
 
-The dockable engineering workspace provides a scene hierarchy, validated property inspector,
-transport controls, global gravity/time settings, and live diagnostics. Scene and solver edits are
-queued and applied at deterministic simulation boundaries; rejected numeric input appears in the
-diagnostic command log.
+![Animated Earth–Moon orbit with the selected Moon and its trail highlighted](media/readme/earth-moon.gif)
 
-**Save** creates an in-session checkpoint of the complete physical scene, simulation time, and
-runtime solver settings. **Reset** restores the latest checkpoint, or the startup preset when no
-checkpoint exists. Save History lists up to 64 checkpoints in newest-first order and can restore any
-retained state; restoring pauses the simulation and establishes a fresh telemetry baseline.
+In **Simulation Controls**, choose **Earth-Moon**, enable **Object trails**, then press **Play**.
+Try **Time scale = 100000**, **Trail duration = 2500000 s**, and **Body radius multiplier = 6**.
+Use **Follow center of mass camera** and zoom out until the orbit fits.
 
-Selecting a body in the hierarchy or directly in the scene highlights it in gold and displays it in
-the inspector. Object trails can be enabled under Simulation Controls, with a logarithmic duration
-slider measured in simulation seconds. Trail history is bounded and automatically clears when
-simulation time is reset.
+Also try **Earth-Sun** or **Sun-Earth-Moon**.
 
-Scientific visualization adds display-only velocity, net-force, and acceleration arrows; a
-log-scaled electric, magnetic, or gravity field-magnitude slice; and up to 16 fixed world-space
-field probes. The Plots tab can graph global diagnostics, selected-body motion, or probe field
-magnitudes. Position and velocity readings can use the world, center-of-mass, or body-anchored
-translating frame. A separate center-of-mass camera follow control keeps the scene framed while
-preserving orbit and zoom. Probe definitions, frame selection, and visualization controls are saved
-with scene JSON; plot histories are session-only.
+### 2. Explore a three-dimensional electric dipole
 
-Field probes appear as magenta crosses in the scene (gold when selected). Choose a probe in the
-hierarchy to center it without changing zoom, then use **Field Probes** to edit its position and
-toggle its electric, magnetic, or gravity arrows. Magnitude planes render from either side and,
-by default, follow the camera target and expand with zoom; turn off **Fit plane to camera view**
-to use an explicit sampling region.
+![Three-dimensional electric field lines connecting the positive and negative dipole sources](media/readme/electric-dipole.png)
 
-Select a body or probe in the viewport or hierarchy, then use **Move Selected** to set a movement
-step in meters. With the viewport owning keyboard input, `A`/`D` move along world X,
-`W`/`S` along -/+Z, and `E`/`Q`
-along +/-Y; arrow keys and Page Up/Down are alternatives. Holding a movement key repeats the
-step. **Undo move** or `Ctrl+Z` reverses manual movement one step at a time; **Reset position**,
-`Home`, or `Ctrl+R` returns to the position before the current manual-move sequence (and can itself
-be undone). `R` alone still resets the camera. Keyboard shortcuts are suspended while a menu or text
-field owns keyboard input. Moving a body pauses the simulation and applies its new position via
-the command queue; moving a probe changes visualization state only.
+Choose **Electric dipole** → **Display mode: Field Lines** → **Observed field: Electric**.
+Leave **2D field view** off, then drag to inspect the lines from different angles.
 
-Electrostatic presets, charge editing, interaction controls, observed electric-vector lattices, and
-RK4-traced electric field lines are available from Simulation Controls. Field sampling and tracing
-operate through a physics-provider interface; visualization never reimplements the Coulomb law.
-Scene JSON saves preserve SI body state, electromagnetic settings, visualization regions, vector
-scaling, trace limits, and custom field-line seeds.
-Invalid settings are rejected before saving or rendering. Saving stages the new file before
-replacing an existing save; `.pending` or `.previous` sidecars left after an interrupted save are
-preserved for recovery. Back up any such sidecars before retrying. JSON entity IDs retain their
-full integer precision; loading is bounded to 16 MiB and 64 nesting levels.
+Switch to **Observed Vector Field** to see local directions, or **Like charges** to explore repulsion.
+[Make the charges visibly repel](GUIDE.md#make-two-charges-repel).
 
-Semi-Implicit Euler, Velocity Verlet, classical RK4, and Boris are selectable at runtime. Boris
-is preferred for nonrelativistic magnetic gyro motion. Energy totals include kinetic energy and
-the enabled gravity, softened Coulomb, and static uniform-electric-field potentials. Magnetic
-forces do no work. Fixed sources and runtime edits can exchange energy/momentum with the scene;
-these diagnostics are not a closed-system conservation claim in those cases. The diagnostics
-and plots report errors relative to the baseline, while the
-timestep analyzer warns when orbital or pair-crossing timescales are under-resolved. Run
-`aetherion_compare` for the reproducible one-period Earth-like integrator comparison.
-Changing the entity set or conservative force configuration starts a new diagnostic baseline.
-For an exactly zero baseline invariant, the error indicator is 0 when unchanged and 1 otherwise.
-Rejected numerical steps restore body state and do not advance simulation time.
+### 3. Follow a particle in a magnetic field
 
-**Propagation-delay probes** in Simulation Controls loads a moving charge and probes at 3 m and
-6 m. Press Play and inspect Field Probes or plot **Probe EM availability**, **Probe flight delay**,
-or **Probe earliest source time**. With the preset's 1 ns timestep, the first valid samples arrive
-at about 11 ns and 21 ns. Source states are recorded after accepted physics steps and interpolated
-without extrapolation. Missing history, source guards, invalid trajectories, and iteration limits
-are shown in probe readouts and Diagnostics.
+![Animated Boris gyro motion with purple magnetic vectors, a gold trail, and a green velocity arrow](media/readme/magnetic-gyro.gif)
 
-**Retarded Coulomb preview** samples the electric field from the source's retarded position with
-finite signal speed. It is a low-speed educational approximation; full velocity/radiation fields
-require a later solver. Particle forces continue to use the existing instantaneous models.
-Observation distance, tolerances, and iteration limits are configurable and saved in scene JSON.
-History storage is bounded and restarts after trajectory edits, timestep changes, scene loads,
-or checkpoint restores, so probes warm up again for their light-travel time.
+Choose **Uniform-B gyro**, select the particle, enable **Object trails** and **Velocity arrows**,
+then press **Play**. **Boris** is selected by the preset.
+
+Try **Helical motion** for motion along the field, or **Crossed E/B** for a velocity-selector example.
+
+### 4. Inspect a field slice and a probe
+
+![Electric magnitude slice with a selected probe, vector controls, and live field readouts](media/readme/electric-plane.png)
+
+Choose **Electric dipole**, set **Display mode: Field Magnitude Plane**, and use **Show 2D field view**.
+In **Field Probes**, add a probe and enable its **Electric vector**.
+Select it in the hierarchy to locate it. The pictured slice uses charges of **±1 nC**.
+
+For finite-delay sampling, load **Propagation-delay probes** and press **Play**.
+Its 3 m and 6 m probes first become valid at about **11 ns and 21 ns**.
+This is a low-speed delayed-Coulomb preview; particle forces remain instantaneous.
+
+## Controls
+
+| Action | Input |
+| --- | --- |
+| Select a body or probe | Click it in the scene or hierarchy |
+| Orbit / pan / zoom | Left-drag / middle- or right-drag / mouse wheel |
+| Move the selected item | `A/D`: X, `W/S`: −/+Z, `Q/E`: −/+Y |
+| Set movement distance | **Move Selected → Move step (m)** |
+| Undo / reset manual position | `Ctrl+Z` / `Home` or `Ctrl+R` |
+| Reset camera | `R` |
+
+UI widgets capture their own input, so editing a slider does not move the camera.
+Moving a body pauses playback and queues the edit; moving a probe changes display state only.
+
+**Save** creates an in-session checkpoint; **Reset** returns to the latest one.
+**Save History** restores earlier checkpoints. Use **Save Scene JSON** for a file that survives
+restarting the app.
+
+## Go further
+
+- [More experiments, controls, saving, and troubleshooting](GUIDE.md)
+- [Equations, integrators, field tracing, diagnostics, and model limitations](TECHNICAL_GUIDE.md)
+- [Regenerate the screenshots and GIFs](media/readme/README.md)
