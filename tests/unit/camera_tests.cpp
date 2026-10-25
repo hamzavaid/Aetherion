@@ -37,7 +37,28 @@ TEST(Camera, CenterViewportRayPointsAtOrbitTarget) {
     const auto ray = camera.rayFromNdc(0.0, 0.0, 16.0 / 9.0);
     const auto expected = (camera.targetWorld() - camera.positionWorld()).normalized();
     EXPECT_NEAR(aetherion::math::dot(ray.direction, expected), 1.0, 1.0e-12);
-    EXPECT_EQ(ray.origin, camera.positionWorld());
+    const auto camera_position = camera.positionWorld();
+    // Optimized libm/inlining paths can differ by a few ULPs between these evaluations.
+    // Compare double precision (GoogleTest's four-ULP bound), not Vec3d's bit-exact equality.
+    EXPECT_DOUBLE_EQ(ray.origin.x, camera_position.x);
+    EXPECT_DOUBLE_EQ(ray.origin.y, camera_position.y);
+    EXPECT_DOUBLE_EQ(ray.origin.z, camera_position.z);
+}
+
+TEST(Camera, PerspectiveRayOriginsMatchCameraWithinDoublePrecisionAcrossScales) {
+    for (const double scale_m : {1.0e-6, 1.0, 1.0e11}) {
+        SCOPED_TRACE(scale_m);
+        Camera camera;
+        camera.focus({10.0 * scale_m, 20.0 * scale_m, -30.0 * scale_m}, 4.0 * scale_m);
+        const auto camera_position = camera.positionWorld();
+        for (const double x_ndc : {-1.0, 0.0, 1.0}) {
+            const auto ray = camera.rayFromNdc(x_ndc, 0.5, 16.0 / 9.0);
+            EXPECT_DOUBLE_EQ(ray.origin.x, camera_position.x);
+            EXPECT_DOUBLE_EQ(ray.origin.y, camera_position.y);
+            EXPECT_DOUBLE_EQ(ray.origin.z, camera_position.z);
+            EXPECT_NEAR(ray.direction.norm(), 1.0, 1.0e-14);
+        }
+    }
 }
 
 TEST(Camera, DefaultViewStartsAboveGridAndLooksDownTowardTarget) {
